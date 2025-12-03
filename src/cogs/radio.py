@@ -5,13 +5,13 @@ from discord import app_commands
 import aiohttp
 import re
 from typing import Optional
-from constants import *
+from util.constants import *
 from views.ticketviews import *
 from modals.ticketmodals import *
-from util.ticket_creator import *
-from util.queue import *
-from embeds import *
-from texts import *
+from util.tickets.ticket_creator import *
+from util.music.queue import *
+from modals.embeds import *
+from lang.texts import *
 
 if TYPE_CHECKING:
     from cogs.music import play_next

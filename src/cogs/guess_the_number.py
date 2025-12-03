@@ -1,6 +1,6 @@
 # ruff: noqa: F403 F405
 from discord.ext import commands
-from constants import *
+from util.constants import *
 from discord import *
 from discord.ui import View, Button
 import random

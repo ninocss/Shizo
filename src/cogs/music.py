@@ -6,372 +6,471 @@ import yt_dlp
 import asyncio
 import random
 import concurrent.futures
-from typing import List
-import time
-from constants import *
-from util.queue import *
-from embeds import *
-from texts import *
+from typing import List, Optional, Tuple
+from util.constants import *
+from util.music.queue import *
+from modals.embeds import *
+from lang.texts import *
 from views.ticketviews import ActionsView
 import json
 import os
 from datetime import datetime, timedelta
+from ytmusicapi import YTMusic
+import re
 
 guild_queues = {}
 
-class PreloadedSong:
-    def __init__(self, source, metadata):
-        self.source = source
-        self.metadata = metadata
-        self.is_ready = True
-        self.preload_time = time.time()
+def safe_avatar(user: discord.abc.User) -> Optional[str]:
+    try:
+        return user.display_avatar.url
+    except Exception:
+        return None
 
 class AsyncSongLoader:
     def __init__(self, max_workers=4):
         self.executor = concurrent.futures.ThreadPoolExecutor(max_workers=max_workers)
-        self.preload_cache = {}
-        self.max_cache_size = 50
-        
-    def cleanup_cache(self):
-        if len(self.preload_cache) > self.max_cache_size:
-            sorted_items = sorted(self.preload_cache.items(), 
-                                key=lambda x: x[1].preload_time)
-            for key, _ in sorted_items[:10]:
-                del self.preload_cache[key]
-    
+
     async def extract_info_async(self, url: str, loop=None):
         if loop is None:
             loop = asyncio.get_running_loop()
-            
+
         def run_yt():
             with yt_dlp.YoutubeDL(YT_OPTS) as ydl:
                 return ydl.extract_info(url, download=False)
-        
+
         return await loop.run_in_executor(self.executor, run_yt)
-    
+
     async def preload_audio_source(self, stream_url: str, loop=None):
         if loop is None:
             loop = asyncio.get_running_loop()
-            
+
         def create_source():
             ffmpeg_args = {
                 'before_options': '-reconnect 1 -reconnect_streamed 1 -reconnect_delay_max 5',
                 'options': '-vn -bufsize 512k'
             }
             return discord.FFmpegOpusAudio(stream_url, **ffmpeg_args)
-        
+
         return await loop.run_in_executor(self.executor, create_source)
 
 song_loader = AsyncSongLoader()
 
 class OptimizedQueue:
     def __init__(self):
-        self.queue = []
+        self.queue: List[Tuple[discord.AudioSource, tuple]] = []
         self.playing = False
-        self.preload_tasks = []
         self.lock = asyncio.Lock()
-    
+
     def add(self, song_data):
         self.queue.append(song_data)
-    
+
     def get_next(self):
         if self.queue:
             return self.queue.pop(0)
         return None
-    
+
+    def peek(self):
+        return self.queue[0] if self.queue else None
+
     def is_empty(self):
         return len(self.queue) == 0
-    
+
     def clear(self):
         self.queue.clear()
-        for task in self.preload_tasks:
-            if not task.done():
-                task.cancel()
-        self.preload_tasks.clear()
 
 class MusicCog(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
         self.background_tasks = set()
-        
+
+    def make_embed(
+        self,
+        title: str,
+        description: Optional[str] = None,
+        *,
+        color: int = 0x5865F2,
+        thumbnail: Optional[str] = None,
+        author_name: Optional[str] = None,
+        author_icon: Optional[str] = None,
+        footer: Optional[str] = None,
+        footer_icon: Optional[str] = None,
+        fields: Optional[List[Tuple[str, str, bool]]] = None,
+    ) -> discord.Embed:
+        embed = discord.Embed(title=title, description=description or "", color=color)
+        embed.timestamp = discord.utils.utcnow()
+        if thumbnail:
+            embed.set_thumbnail(url=thumbnail)
+        if author_name:
+            embed.set_author(name=author_name, icon_url=author_icon or discord.Embed.Empty)
+        if footer:
+            embed.set_footer(text=footer, icon_url=footer_icon or discord.Embed.Empty)
+        if fields:
+            for name, value, inline in fields:
+                embed.add_field(name=name, value=value, inline=inline)
+        return embed
+
     def create_background_task(self, coro):
         task = asyncio.create_task(coro)
         self.background_tasks.add(task)
         task.add_done_callback(self.background_tasks.discard)
         return task
-        
+
     async def send_static_message(self):
         try:
-            actions_embed = discord.Embed(
-                title="Music Bot Control Panel",
-                description="Available music commands",
-                color=0x9b59b6
+            actions_embed = self.make_embed(
+                title="Music Controls",
+                description="Use the commands below to control music.",
+                color=0x5865F2,
+                thumbnail=safe_avatar(self.bot.user),
+                footer=f"Serving {len(self.bot.users)} users",
+                footer_icon=safe_avatar(self.bot.user),
+                fields=[
+                    ("Commands",
+                     "```\n/play <url|search>\n/queue\n/skip\n/pause\n/shuffle\n/stop\n/chart\n/clearqueue\n```",
+                     False),
+                    ("Status",
+                     f"```\nServers: {len(self.bot.guilds)}\nUsers: {len(self.bot.users)}\n```",
+                     True)
+                ]
             )
-            actions_embed.add_field(
-                name="Core Commands",
-                value="```\n/play     - Play music from URL or search\n/radio    - Play live radio\n/skip     - Skip current song\n/queue    - View song queue\n/stop     - Stop music and leave\n/shuffle  - Shuffle the queue\n/chart    - Play random chart song\n```",
-                inline=False
-            )
-            actions_embed.add_field(
-                name="Bot Status",
-                value=f"```\nConnected Servers: {len(self.bot.guilds)}\nTotal Users: {len(self.bot.users)}\nStatus: Ready\n```",
-                inline=True
-            )
-            actions_embed.add_field(
-                name="Tips",
-                value="```\n• Join a voice channel first\n• Use playlists for bulk adding\n• Supports YouTube links\n```",
-                inline=True
-            )
-            actions_embed.set_thumbnail(url=self.bot.user.avatar.url if self.bot.user.avatar else None)
-            actions_embed.set_footer(
-                text=f"Music Bot • Serving {len(self.bot.users)} users",
-                icon_url=self.bot.user.avatar.url if self.bot.user.avatar else None
-            )
-            actions_embed.timestamp = discord.utils.utcnow()
 
             channel = await self.bot.fetch_channel(I_CHANNEL)
             if channel:
                 async for message in channel.history(limit=100):
-                    if (message.author == self.bot.user and 
+                    if (
+                        message.author == self.bot.user and
                         message.embeds and
-                        message.embeds[0].description and
-                        "Available music commands" in message.embeds[0].description):
+                        message.embeds[0].title and
+                        "Music Controls" in message.embeds[0].title
+                    ):
                         await message.delete()
                         break
-                
+
                 await channel.send(embed=actions_embed, view=ActionsView(bot=self.bot))
         except Exception as e:
             print(f"Error sending disconnect message: {e}")
-    
-    async def preload_next_songs(self, guild_id: int, count: int = 3):
-        if guild_id not in guild_queues:
-            return
-            
-        queue = guild_queues[guild_id]
-        
-        for i, song_data in enumerate(queue.queue[:count]):
-            if i >= count:
-                break
-                
-            if hasattr(song_data, 'source') and song_data.source:
-                continue
-                
-            try:
-                if not hasattr(song_data, 'stream_url'):
-                    continue
-                    
-                source = await song_loader.preload_audio_source(song_data.stream_url)
-                song_data.source = source
-                
-            except Exception as e:
-                print(f"Fehler beim Vorladen: {e}")
-                continue
-    
+
     async def play_next(self, guild, voice_client, interaction):
         if guild.id not in guild_queues:
             return
-            
-        queue = guild_queues[guild.id]
-        next_song = queue.get_next()
 
-        if next_song:
-            self.create_background_task(self.preload_next_songs(guild.id))
-            
-            source, metadata = next_song
-            title, thumbnail, _, duration, author, song_url, likes, views, upload_date = metadata
+        queue = guild_queues[guild.id]
+        next_song_data = queue.get_next()
+
+        if next_song_data:
+            try:
+                webpage_url = next_song_data['song_url']
+                
+                fresh_info = await song_loader.extract_info_async(webpage_url)
+                
+                if not fresh_info or "url" not in fresh_info:
+                    print(f"Failed to get fresh stream URL for {webpage_url}")
+                    queue.playing = False
+                    await self.play_next(guild, voice_client, interaction)
+                    return
+                
+                stream_url = fresh_info["url"]
+                
+                source = await song_loader.preload_audio_source(stream_url)
+                
+            except Exception as e:
+                print(f"Error creating audio source: {e}")
+                queue.playing = False
+                await self.play_next(guild, voice_client, interaction)
+                return
+
             queue.playing = True
 
             def after_song(e):
                 if e:
-                    print(f"Error: {e}")
+                    print(f"Playback error: {e}")
                 queue.playing = False
                 pn = self.play_next(guild, voice_client, interaction)
                 asyncio.run_coroutine_threadsafe(pn, self.bot.loop)
 
-            voice_client.play(source, after=after_song)
+            try:
+                voice_client.play(source, after=after_song)
+            except Exception as e:
+                print(f"Error starting playback: {e}")
+                queue.playing = False
+                return
+
+            metadata = (
+                next_song_data['title'],
+                next_song_data['thumbnail'],
+                None,
+                next_song_data['duration'],
+                next_song_data['author'],
+                next_song_data['song_url'],
+                next_song_data['likes'],
+                next_song_data['views'],
+                next_song_data['upload_date']
+            )
             
             embed = self.create_now_playing_embed(metadata, interaction)
-            msg = await interaction.channel.send(embed=embed)
+            try:
+                msg = await interaction.channel.send(embed=embed)
+                self.create_background_task(
+                    self.update_progress(msg, embed, next_song_data['duration'])
+                )
+            except Exception as e:
+                print(f"Error sending now playing message: {e}")
+        elif AUTO_PLAY_ENABLED:
+            print("autoplaying")
+            song_link = None
+
+            channel = getattr(interaction, "channel", None) or await self.bot.fetch_channel(I_CHANNEL)
+            try:
+                async for msg in channel.history(limit=200):
+                    if not msg.embeds:
+                        continue
+                    for emb in msg.embeds:
+                        candidates = []
+                        if getattr(emb, "url", None):
+                            candidates.append(emb.url)
+                        if getattr(emb, "title", None):
+                            candidates.append(emb.title)
+                        if getattr(emb, "description", None):
+                            candidates.append(emb.description)
+                        if getattr(emb, "fields", None):
+                            for f in emb.fields:
+                                candidates.append(f.name)
+                                candidates.append(f.value)
+
+                        url_re = re.compile(r"(https?://(?:music\.youtube\.com|(?:www\.)?youtube\.com|youtu\.be)[^\s]+)", re.IGNORECASE)
+                        for text in candidates:
+                            if not text:
+                                continue
+                            m = url_re.search(text)
+                            if m:
+                                song_link = m.group(1)
+                                break
+                        if song_link:
+                            break
+                    if song_link:
+                        break
+            except Exception as e:
+                print(f"Error scanning history for embed song link: {e}")
             
-            self.create_background_task(self.update_progress(msg, embed, duration))
+            try: 
+                fresh_info = await song_loader.extract_info_async(song_link)
+                if not fresh_info or "url" not in fresh_info:
+                    print(f"Failed to get fresh stream URL for autoplay {song_link}")
+                    queue.playing = False
+                    return
+
+                stream_url = fresh_info["url"]
+                source = await song_loader.preload_audio_source(stream_url)
+            except Exception as e:
+                print(f"Error creating audio source for autoplay: {e}")
+                queue.playing = False
+                return
+            
+            try:
+                print("suggestions")
+                yt = YTMusic()
+                video_id_match = re.search(r"(?:v=|youtu\.be/)([\w-]{11})", song_link)
+                if not video_id_match:
+                    print(f"Could not extract video ID from link: {song_link}")
+                    return
+
+                video_id = video_id_match.group(1)
+                related_songs = yt.get_song_related(video_id)
+
+                suggestion = related_songs[0]["videoid"]
+
+                try:
+                    webpage_url = f"https://www.youtube.com/watch?v={suggestion}"
+                    
+                    fresh_info = await song_loader.extract_info_async(webpage_url)
+                    
+                    if not fresh_info or "url" not in fresh_info:
+                        print(f"Failed to get fresh stream URL for {webpage_url}")
+                        queue.playing = False
+                        await self.play_next(guild, voice_client, interaction)
+                        return
+                    
+                    stream_url = fresh_info["url"]
+                    
+                    source = await song_loader.preload_audio_source(stream_url)
+                    
+                except Exception as e:
+                    print(f"Error creating audio source: {e}")
+                    queue.playing = False
+                    await self.play_next(guild, voice_client, interaction)
+                    return
+                
+                queue.playing = True
+
+                def after_song(e):
+                    if e:
+                        print(f"Playback error: {e}")
+                    queue.playing = False
+                    pn = self.play_next(guild, voice_client, interaction)
+                    asyncio.run_coroutine_threadsafe(pn, self.bot.loop)
+
+                try:
+                    voice_client.play(source, after=after_song)
+                except Exception as e:
+                    print(f"Error starting playback: {e}")
+                    queue.playing = False
+                    return
+
+                metadata = (
+                    next_song_data['title'],
+                    next_song_data['thumbnail'],
+                    None,
+                    next_song_data['duration'],
+                    next_song_data['author'],
+                    next_song_data['song_url'],
+                    next_song_data['likes'],
+                    next_song_data['views'],
+                    next_song_data['upload_date']
+                )
+                
+                embed = self.create_now_playing_embed(metadata, interaction)
+                try:
+                    msg = await interaction.channel.send(embed=embed)
+                    self.create_background_task(
+                        self.update_progress(msg, embed, next_song_data['duration'])
+                    )
+                except Exception as e:
+                    print(f"Error sending now playing message: {e}")
+            except Exception as e:
+                print(f"Autoplay error: {e}")
+
         else:
+            print("queue stopped")
             queue.playing = False
 
     def create_now_playing_embed(self, metadata, interaction):
         title, thumbnail, _, duration, author, song_url, likes, views, upload_date = metadata
-        
+
         def format_time(seconds):
             m, s = divmod(int(seconds), 60)
             return f"{m:02}:{s:02}"
-        
-        def format_number(n):
-            if n is None:
-                return "N/A"
-            if n >= 1_000_000:
-                return f"{n/1_000_000:.1f}M"
-            elif n >= 1_000:
-                return f"{n/1_000:.1f}K"
-            return str(n)
-        
-        if upload_date and len(str(upload_date)) == 8:
-            date = f"{upload_date[6:8]}.{upload_date[4:6]}.{upload_date[0:4]}"
-        else:
-            date = str(upload_date)
-        
-        embed = discord.Embed(
-            title="📖 Queue",
-            description=f"```🎵 Now Playing: {title}```",
-            color=0xe91e63
+
+        fields = [
+            ("Artist", f"{author}", True),
+            ("Duration", f"{format_time(duration)}", True),
+            ("Link", f"{song_url}", True),
+        ]
+
+        embed = self.make_embed(
+            title="Now playing",
+            description=title,
+            color=0x5865F2,
+            thumbnail=thumbnail,
+            author_name=f"Requested by {interaction.user.display_name}",
+            author_icon=safe_avatar(interaction.user),
+            footer="Use /skip to go to the next song",
+            footer_icon=safe_avatar(self.bot.user),
+            fields=[(n, f"```\n{v}\n```", True) for n, v, _ in fields]
         )
-        embed.add_field(
-            name="🧑‍🎤 **Author**",
-            value=f"{author}",
-            inline=True
-        )
-        embed.add_field(
-            name="⏱️ **Duration**", 
-            value=f"⏳ Duration: {format_time(duration)}\n", 
-            inline=True
-        )
-        embed.add_field(
-            name="🔗 **Links**",
-            value=f"[Watch on YouTube]({song_url})\n[More from {author}](https://youtube.com/results?search_query={author.replace(' ', '+')})",
-            inline=True
-        )
-        embed.add_field(
-            name="📊 **Info**",
-            value=f"{format_number(likes)} likes • {format_number(views)} views • {date}",
-            inline=False
-        )
-        embed.set_thumbnail(url=thumbnail)
-        embed.set_author(
-            name=f"🎧 Requested by {interaction.user.display_name}",
-            icon_url=interaction.user.avatar.url
-        )
-        embed.set_footer(
-            text="🎵 Music Bot • Enjoy the music! 🎶",
-            icon_url=self.bot.user.avatar.url if self.bot.user.avatar else None
-        )
-        embed.timestamp = discord.utils.utcnow()
-        
         return embed
-    
+
     async def update_progress(self, message, embed, duration):
-        await asyncio.sleep(duration)
-        embed.color = 0x95a5a6
-        embed.set_field_at(0, name="⏹️ **Finished**", value=f"```\n✅ Completed: {self.format_time(duration)}\n🎵 Song ended\n```", inline=False)
         try:
+            await asyncio.sleep(max(0, int(duration)))
+            embed.color = 0x95a5a6
+            embed.set_footer(text="Playback finished", icon_url=safe_avatar(self.bot.user))
             await message.edit(embed=embed)
-        except discord.HTTPException:
+        except (discord.HTTPException, asyncio.CancelledError):
             pass
-    
+
     def format_time(self, seconds):
         m, s = divmod(int(seconds), 60)
         return f"{m:02}:{s:02}"
-    
+
+    async def process_single_entry(self, entry: dict):
+        try:
+            if not entry or "url" not in entry:
+                print(f"Error processing entry: Missing 'url' key")
+                return None
+
+            return {
+                'entry_data': entry,
+                'title': entry.get("title", "Unknown title"),
+                'thumbnail': entry.get("thumbnail"),
+                'duration': entry.get("duration", 0),
+                'author': entry.get("uploader", "Unknown author"),
+                'song_url': entry.get("webpage_url", "Unknown URL"),
+                'likes': entry.get("like_count", 0),
+                'views': entry.get("view_count", 0),
+                'upload_date': entry.get("upload_date", "Unknown date")
+            }
+
+        except Exception as e:
+            print(f"Error processing entry: {e}")
+            return None
+
     async def process_song_entries(self, entries: List[dict], guild_id: int):
         if guild_id not in guild_queues:
             guild_queues[guild_id] = OptimizedQueue()
-        
+
         queue = guild_queues[guild_id]
         processed_songs = []
-        
+
         batch_size = 5
         for i in range(0, len(entries), batch_size):
-            batch = entries[i:i+batch_size]
-            
+            batch = entries[i:i + batch_size]
+
             tasks = []
             for entry in batch:
                 if entry:
                     tasks.append(self.process_single_entry(entry))
-            
+
             if tasks:
                 results = await asyncio.gather(*tasks, return_exceptions=True)
                 for result in results:
-                    if isinstance(result, Exception):
-                        print(f"Fehler bei der Verarbeitung: {result}")
+                    if isinstance(result, Exception) or not result:
                         continue
-                    if result:
-                        processed_songs.append(result)
-                        queue.add(result)
-        
+                    processed_songs.append(result)
+                    queue.add(result)
+
         return processed_songs
-    
-    async def process_single_entry(self, entry: dict):
-        try:
-            if not entry or "url" not in entry:
-                print(f"Fehler beim Verarbeiten des Eintrags: Missing 'url' key in entry")
-                return None
-                
-            stream_url = entry["url"]
-            title = entry.get("title", "Unknown title")
-            thumbnail = entry.get("thumbnail")
-            duration = entry.get("duration", 0)
-            author = entry.get("uploader", "Unknown author")
-            song_url = entry.get("webpage_url", "Unknown URL")
-            likes = entry.get("like_count", 0)
-            views = entry.get("view_count", 0)
-            upload_date = entry.get("upload_date", "Unknown date")
-            
-            metadata = (title, thumbnail, None, duration, author, song_url, likes, views, upload_date)
-            
-            source = await song_loader.preload_audio_source(stream_url)
-            
-            return (source, metadata)
-            
-        except Exception as e:
-            print(f"Fehler beim Verarbeiten des Eintrags: {e}")
-            return None
-        
+
     @app_commands.command(name="chart", description="Plays a random song from the YouTube Music charts")
     async def play_chart(self, interaction: discord.Interaction):
-        # Check if user is timed out
         if await self.check_timeout_decorator(interaction):
             return
         else:
             await interaction.response.defer()
-        
-        loading_embed = discord.Embed(
-            title="📊 Fetching Chart Songs",
-            description="🔍 **Searching through YouTube Music charts...**\n\n⏳ *This might take a moment*",
-            color=0xf39c12
+
+        loading_embed = self.make_embed(
+            title="Loading chart",
+            description="Fetching popular songs...",
+            color=0x3498db,
         )
-        loading_embed.set_thumbnail(url="https://i.imgur.com/ZKwSz4A.gif")
-        loading_embed.add_field(
-            name="🎯 **Sources**",
-            value="```\n📈 Top 50 Global\n🔥 Trending Music\n🎵 Billboard Hot 100\n```",
-            inline=False
-        )
-        loading_embed.timestamp = discord.utils.utcnow()
-        
+
         loading_message = await interaction.followup.send(embed=loading_embed)
-        
+
         try:
             chart_urls = [
-                "https://music.youtube.com/playlist?list=RDCLAK5uy_kmPRjHDECIcuVwnKsx5w4UBCp9jSEMzM",  # Top 50 Global
-                "https://music.youtube.com/playlist?list=RDCLAK5uy_k8jhb5wP3rUqLOWFzVQNE_YdIcF7O4BN",  # Trending
-                "https://www.youtube.com/playlist?list=PLFgquLnL59alCl_2TQvOiD5Vgm1hCaGSI",  # Billboard Hot 100
+                "https://music.youtube.com/playlist?list=RDCLAK5uy_kmPRjHDECIcuVwnKsx5w4UBCp9jSEMzM",
+                "https://music.youtube.com/playlist?list=RDCLAK5uy_k8jhb5wP3rUqLOWFzVQNE_YdIcF7O4BN",
+                "https://www.youtube.com/playlist?list=PLFgquLnL59alCl_2TQvOiD5Vgm1hCaGSI",
             ]
-            
+
             playlist_opts = {
                 'quiet': True,
                 'no_warnings': True,
                 'extract_flat': True,
                 'playlist_items': '1-20',
             }
-            
+
             trending_songs = []
-            
+
             for chart_url in chart_urls:
                 try:
                     def extract_playlist_info():
                         with yt_dlp.YoutubeDL(playlist_opts) as ydl:
                             return ydl.extract_info(chart_url, download=False)
-                    
+
                     chart_info = await asyncio.get_running_loop().run_in_executor(
                         song_loader.executor, extract_playlist_info
                     )
-                    
+
                     if "entries" in chart_info and chart_info["entries"]:
                         for entry in chart_info["entries"][:15]:
                             if entry and entry.get("title"):
@@ -382,22 +481,22 @@ class MusicCog(commands.Cog):
                                 else:
                                     song_query = title
                                 trending_songs.append(song_query)
-                        
+
                         if trending_songs:
                             break
-                            
+
                 except Exception as e:
                     print(f"Fehler beim Laden der Playlist {chart_url}: {e}")
                     continue
-            
+
             if not trending_songs:
                 try:
                     search_queries = [
                         "ytsearch5:music charts 2024",
-                        "ytsearch5:trending music now", 
+                        "ytsearch5:trending music now",
                         "ytsearch5:top songs 2024"
                     ]
-                    
+
                     for search_query in search_queries:
                         try:
                             search_results = await song_loader.extract_info_async(search_query)
@@ -411,20 +510,20 @@ class MusicCog(commands.Cog):
                                         else:
                                             song_query = title
                                         trending_songs.append(song_query)
-                                
+
                                 if trending_songs:
                                     break
                         except Exception as e:
                             print(f"Fehler bei der Suche {search_query}: {e}")
                             continue
-                            
+
                 except Exception as e:
                     print(f"Fehler bei der Fallback-Suche: {e}")
-            
+
             if not trending_songs:
                 trending_songs = [
                     "Flowers Miley Cyrus",
-                    "As It Was Harry Styles", 
+                    "As It Was Harry Styles",
                     "Bad Habit Steve Lacy",
                     "About Damn Time Lizzo",
                     "Heat Waves Glass Animals",
@@ -434,92 +533,88 @@ class MusicCog(commands.Cog):
                     "Good 4 U Olivia Rodrigo",
                     "Levitating Dua Lipa"
                 ]
-            
+
             random_chart_song = random.choice(trending_songs)
-            
-            loading_embed.title = "🎵 Loading Chart Song"
-            loading_embed.description = f"**Selected:** {random_chart_song}\n\n⏳ *Preparing your music...*"
-            loading_embed.color = 0x3498db
+
+            loading_embed = self.make_embed(
+                title="Loading chart",
+                description=f"Selected: {random_chart_song}\nPreparing...",
+                color=0x3498db,
+            )
             await loading_message.edit(embed=loading_embed)
-            
+
         except Exception as e:
             print(f"Fehler beim Abrufen der Charts: {e}")
             fallback_songs = [
                 "Flowers Miley Cyrus",
-                "As It Was Harry Styles", 
+                "As It Was Harry Styles",
                 "Bad Habit Steve Lacy",
                 "About Damn Time Lizzo",
                 "Heat Waves Glass Animals"
             ]
             random_chart_song = random.choice(fallback_songs)
-            
-            loading_embed.title = "🎵 Loading Fallback Song"
-            loading_embed.description = f"**Selected:** {random_chart_song}\n\n⏳ *Using fallback charts...*"
-            loading_embed.color = 0xe67e22
+
+            loading_embed = self.make_embed(
+                title="Loading chart (fallback)",
+                description=f"Selected: {random_chart_song}\nPreparing...",
+                color=0xe67e22,
+            )
             await loading_message.edit(embed=loading_embed)
-        
+
         search_query = f"ytsearch:{random_chart_song}"
-        
+
         try:
             info = await song_loader.extract_info_async(search_query)
         except Exception as e:
-            error_embed = discord.Embed(
-                title="❌ Error",
-                description=f"**Failed to load chart song**\n\n```\n{e}\n```",
+            error_embed = self.make_embed(
+                title="Error",
+                description=f"Failed to load chart song.\n\n{e}",
                 color=0xe74c3c
             )
             await interaction.followup.send(embed=error_embed, ephemeral=True)
             return
-        
+
         if interaction.guild.id not in guild_queues:
             guild_queues[interaction.guild.id] = OptimizedQueue()
-        
+
         queue = guild_queues[interaction.guild.id]
-        
-        if "entries" in info and info["entries"]:
-            entry = info["entries"][0]
-        else:
-            entry = info
-        
+
+        entry = info["entries"][0] if "entries" in info and info["entries"] else info
+
         processed_song = await self.process_single_entry(entry)
         if processed_song:
             queue.add(processed_song)
-            title = processed_song[1][0]
-            thumbnail = processed_song[1][1]
-            
-            success_embed = discord.Embed(
-                title="📊 Chart Song Added!",
-                description=f"**{title}**\n\n✅ *Added to queue successfully*",
-                color=0x27ae60
+            title = processed_song['title']
+            thumbnail = processed_song['thumbnail']
+
+            success_embed = self.make_embed(
+                title="Added to queue",
+                description=title,
+                color=0x2ecc71,
+                thumbnail=thumbnail,
+                fields=[
+                    ("Position", f"```\n#{len(queue.queue)}\n```", True)
+                ]
             )
-            success_embed.set_thumbnail(url=thumbnail)
-            success_embed.add_field(
-                name="🎯 **Source**",
-                value="```\n📈 YouTube Music Charts\n🔥 Trending Now\n```",
-                inline=True
-            )
-            success_embed.add_field(
-                name="📋 **Queue Position**",
-                value=f"```\n#{len(queue.queue)}\n```",
-                inline=True
-            )
-            success_embed.timestamp = discord.utils.utcnow()
-            
+
             await interaction.channel.send(embed=success_embed)
-        
-        await loading_message.delete()
-        
+
+        try:
+            await loading_message.delete()
+        except Exception:
+            pass
+
         if not interaction.user.voice:
             await interaction.followup.send(
-                embed=discord.Embed(
-                    title="❌ Voice Channel Required",
-                    description="**You need to be in a voice channel!**\n\n🎧 *Join a voice channel and try again*",
+                embed=self.make_embed(
+                    title="Voice channel required",
+                    description="Join a voice channel and try again.",
                     color=0xe74c3c
                 ),
                 ephemeral=True
             )
             return
-        
+
         voice_client = interaction.guild.voice_client
         if not voice_client or not voice_client.is_connected():
             channel = interaction.user.voice.channel
@@ -528,15 +623,17 @@ class MusicCog(commands.Cog):
             voice_channel = voice_client.channel
 
             if SET_VC_STATUS_TO_MUSIC_PLAYING:
-                current_song = processed_song[1][0] if processed_song else "Music"
-                await voice_channel.edit(status=f"Listening to: {current_song}")
-                
-        
+                current_song = (queue.peek()['title'] if queue.peek() else "Music")
+                try:
+                    await voice_channel.edit(status=f"Listening to: {current_song}")
+                except Exception:
+                    pass
+
         if voice_client and voice_client.channel and interaction.user.voice.channel != voice_client.channel:
             await interaction.followup.send(
-                embed=discord.Embed(
-                    title="❌ Wrong Voice Channel",
-                    description="**You must be in the same voice channel as the bot!**\n\n🎧 *Join the bot's voice channel to use this command*",
+                embed=self.make_embed(
+                    title="Wrong voice channel",
+                    description="You must be in the same voice channel as the bot.",
                     color=0xe74c3c
                 ),
                 ephemeral=True
@@ -544,14 +641,13 @@ class MusicCog(commands.Cog):
         else:
             if not queue.playing and not voice_client.is_playing() and not queue.is_empty():
                 await self.play_next(guild=interaction.guild, voice_client=voice_client, interaction=interaction)
-    
+
     async def insipre_me(self, interaction: discord.Interaction):
-        # Check if user is timed out
         if await self.check_timeout_decorator(interaction):
             return
         else:
             await interaction.response.defer()
-        
+
         random_songs = [
             "Never Gonna Give You Up Rick Astley",
             "Bohemian Rhapsody Queen",
@@ -609,104 +705,92 @@ class MusicCog(commands.Cog):
             "Khalid Better",
             "Cardi B WAP"
         ]
-        
+
         random_song = random.choice(random_songs)
-        
-        loading_embed = discord.Embed(
-            title="✨ Inspiration Mode",
-            description=f"✨ **Inspired Pick:** {random_song}\n\n⏳ *Preparing your surprise...*",
+
+        loading_embed = self.make_embed(
+            title="Loading",
+            description=f"Selected: {random_song}\nPreparing...",
             color=0x9b59b6
         )
-        loading_embed.set_thumbnail(url="https://i.imgur.com/ZKwSz4A.gif")
-        loading_embed.add_field(
-            name="🎯 **What's This?**",
-            value="```\n✨ Random song selection\n🎵 Curated playlist\n🎲 Surprise me feature\n```",
-            inline=False
-        )
-        loading_embed.timestamp = discord.utils.utcnow()
-        
+
         loading_message = await interaction.followup.send(embed=loading_embed)
-        
+
         search_query = f"ytsearch:{random_song}"
-        
+
         try:
             info = await song_loader.extract_info_async(search_query)
         except Exception as e:
             await interaction.followup.send(
-                embed=discord.Embed(
-                    title="❌ Error",
-                    description=f"**Failed to load song**\n\n```\n{e}\n```",
+                embed=self.make_embed(
+                    title="Error",
+                    description=f"Failed to load song.\n\n{e}",
                     color=0xe74c3c
                 ),
                 ephemeral=True
             )
             return
-        
+
         if interaction.guild.id not in guild_queues:
             guild_queues[interaction.guild.id] = OptimizedQueue()
-        
+
         queue = guild_queues[interaction.guild.id]
-        
-        if "entries" in info and info["entries"]:
-            entry = info["entries"][0]
-        else:
-            entry = info
-        
+
+        entry = info["entries"][0] if "entries" in info and info["entries"] else info
+
         processed_song = await self.process_single_entry(entry)
         if processed_song:
             queue.add(processed_song)
-            title = processed_song[1][0]
-            thumbnail = processed_song[1][1]
-            
-            success_embed = discord.Embed(
-                title="✨ Inspiration Delivered!",
-                description=f"🎵 **{title}**\n\n🎲 *Your random musical surprise*",
-                color=0x9b59b6
+            title = processed_song['title']
+            thumbnail = processed_song['thumbnail']
+
+            success_embed = self.make_embed(
+                title="Added to queue",
+                description=title,
+                color=0x9b59b6,
+                thumbnail=thumbnail,
+                fields=[
+                    ("Position", f"```\n#{len(queue.queue)}\n```", True)
+                ]
             )
-            success_embed.set_thumbnail(url=thumbnail)
-            success_embed.add_field(
-                name="🎯 **Mode**",
-                value="```\n✨ Inspiration\n🎲 Random Pick\n```",
-                inline=True
-            )
-            success_embed.add_field(
-                name="📋 **Queue Position**",
-                value=f"```\n#{len(queue.queue)}\n```",
-                inline=True
-            )
-            success_embed.timestamp = discord.utils.utcnow()
-            
+
             await interaction.channel.send(embed=success_embed)
-        
-        await loading_message.delete()
-        
+
+        try:
+            await loading_message.delete()
+        except Exception:
+            pass
+
         if not interaction.user.voice:
             await interaction.followup.send(
-                embed=discord.Embed(
-                    title="❌ Voice Channel Required",
-                    description="**You need to be in a voice channel!**\n\n🎧 *Join a voice channel and try again*",
+                embed=self.make_embed(
+                    title="Voice channel required",
+                    description="Join a voice channel and try again.",
                     color=0xe74c3c
                 ),
                 ephemeral=True
             )
             return
-        
+
         voice_client = interaction.guild.voice_client
         if not voice_client or not voice_client.is_connected():
             channel = interaction.user.voice.channel
             await channel.connect(self_deaf=True)
             voice_client = interaction.guild.voice_client
             voice_channel = voice_client.channel
-            
+
             if SET_VC_STATUS_TO_MUSIC_PLAYING:
-                current_song = processed_song[1][0] if processed_song else "Music"
-                await voice_channel.edit(status=f"Listening to: {current_song}")
-        
+                current_song = (queue.peek()['title'] if queue.peek() else "Music")
+                try:
+                    await voice_channel.edit(status=f"Listening to: {current_song}")
+                except Exception:
+                    pass
+
         if voice_client and voice_client.channel and interaction.user.voice.channel != voice_client.channel:
             await interaction.followup.send(
-                embed=discord.Embed(
-                    title="❌ Wrong Voice Channel",
-                    description="**You must be in the same voice channel as the bot!**\n\n🎧 *Join the bot's voice channel to use this command*",
+                embed=self.make_embed(
+                    title="Wrong voice channel",
+                    description="You must be in the same voice channel as the bot.",
                     color=0xe74c3c
                 ),
                 ephemeral=True
@@ -714,22 +798,15 @@ class MusicCog(commands.Cog):
         else:
             if not queue.playing and not voice_client.is_playing() and not queue.is_empty():
                 await self.play_next(guild=interaction.guild, voice_client=voice_client, interaction=interaction)
-    
+
     async def mostplayed_callback(self, interaction: discord.Interaction, song: str):
         await interaction.response.defer()
 
-        loading_embed = discord.Embed(
-            title="🎵 Loading Most Played",
-            description=f"🎯 **Song:** {song}\n\n⏳ *Preparing your favorite...*",
+        loading_embed = self.make_embed(
+            title="Loading",
+            description=f"Selected: {song}\nPreparing...",
             color=0x3498db
         )
-        loading_embed.set_thumbnail(url="https://i.imgur.com/ZKwSz4A.gif")
-        loading_embed.add_field(
-            name="🏆 **Category**",
-            value="```\n🎵 Most Played\n🔥 Popular Choice\n⭐ Fan Favorite\n```",
-            inline=False
-        )
-        loading_embed.timestamp = discord.utils.utcnow()
 
         loading_message = await interaction.followup.send(embed=loading_embed)
 
@@ -739,9 +816,9 @@ class MusicCog(commands.Cog):
             info = await song_loader.extract_info_async(search_query)
         except Exception as e:
             await interaction.followup.send(
-                embed=discord.Embed(
-                    title="❌ Error",
-                    description=f"**Failed to load song**\n\n```\n{e}\n```",
+                embed=self.make_embed(
+                    title="Error",
+                    description=f"Failed to load song.\n\n{e}",
                     color=0xe74c3c
                 ),
                 ephemeral=True
@@ -753,44 +830,36 @@ class MusicCog(commands.Cog):
 
         queue = guild_queues[interaction.guild.id]
 
-        if "entries" in info and info["entries"]:
-            entry = info["entries"][0]
-        else:
-            entry = info
+        entry = info["entries"][0] if "entries" in info and info["entries"] else info
 
         processed_song = await self.process_single_entry(entry)
         if processed_song:
             queue.add(processed_song)
-            title = processed_song[1][0]
-            thumbnail = processed_song[1][1]
-            
-            success_embed = discord.Embed(
-                title="🏆 Most Played Song Added!",
-                description=f"🎵 **{title}**\n\n⭐ *Popular choice added to queue*",
-                color=0xf39c12
+            title = processed_song['title']
+            thumbnail = processed_song['thumbnail']
+
+            success_embed = self.make_embed(
+                title="Added to queue",
+                description=title,
+                color=0xf39c12,
+                thumbnail=thumbnail,
+                fields=[
+                    ("Position", f"```\n#{len(queue.queue)}\n```", True)
+                ]
             )
-            success_embed.set_thumbnail(url=thumbnail)
-            success_embed.add_field(
-                name="🏆 **Category**",
-                value="```\n🎵 Most Played\n🔥 Fan Favorite\n```",
-                inline=True
-            )
-            success_embed.add_field(
-                name="📋 **Queue Position**",
-                value=f"```\n#{len(queue.queue)}\n```",
-                inline=True
-            )
-            success_embed.timestamp = discord.utils.utcnow()
-            
+
             await interaction.channel.send(embed=success_embed)
 
-        await loading_message.delete()
+        try:
+            await loading_message.delete()
+        except Exception:
+            pass
 
         if not interaction.user.voice:
             await interaction.followup.send(
-                embed=discord.Embed(
-                    title="❌ Voice Channel Required",
-                    description="**You need to be in a voice channel!**\n\n🎧 *Join a voice channel and try again*",
+                embed=self.make_embed(
+                    title="Voice channel required",
+                    description="Join a voice channel and try again.",
                     color=0xe74c3c
                 ),
                 ephemeral=True
@@ -803,16 +872,19 @@ class MusicCog(commands.Cog):
             await channel.connect(self_deaf=True)
             voice_client = interaction.guild.voice_client
             voice_channel = voice_client.channel
-            
+
             if SET_VC_STATUS_TO_MUSIC_PLAYING:
-                current_song = processed_song[1][0] if processed_song else "Music"
-                await voice_channel.edit(status=f"Listening to: {current_song}")
+                current_song = (queue.peek()['title'] if queue.peek() else "Music")
+                try:
+                    await voice_channel.edit(status=f"Listening to: {current_song}")
+                except Exception:
+                    pass
 
         if voice_client and voice_client.channel and interaction.user.voice.channel != voice_client.channel:
             await interaction.followup.send(
-                embed=discord.Embed(
-                    title="❌ Wrong Voice Channel",
-                    description="**You must be in the same voice channel as the bot!**\n\n🎧 *Join the bot's voice channel to use this command*",
+                embed=self.make_embed(
+                    title="Wrong voice channel",
+                    description="You must be in the same voice channel as the bot.",
                     color=0xe74c3c
                 ),
                 ephemeral=True
@@ -820,162 +892,161 @@ class MusicCog(commands.Cog):
         else:
             if not queue.playing and not voice_client.is_playing() and not queue.is_empty():
                 await self.play_next(guild=interaction.guild, voice_client=voice_client, interaction=interaction)
-    
+
     @app_commands.command(name="play", description="Plays music")
     @app_commands.describe(song="URL or search term")
     async def play(self, interaction: discord.Interaction, song: str):
-        # Check if user is timed out
         if await self.check_timeout_decorator(interaction):
             return
         else:
-            await interaction.response.defer()
-        
+            try:
+                await interaction.response.defer()
+            except:
+                pass
+
         if interaction.guild.id not in guild_queues:
             guild_queues[interaction.guild.id] = OptimizedQueue()
         queue = guild_queues[interaction.guild.id]
         voice_client = interaction.guild.voice_client
-        
-        if voice_client and voice_client.channel and interaction.user.voice.channel != voice_client.channel:
-            await interaction.followup.send(
-                embed=discord.Embed(
-                    title="❌ Wrong Voice Channel",
-                    description="**You must be in the same voice channel as the bot!**\n\n🎧 *Join the bot's voice channel to use this command*",
-                    color=0xe74c3c
-                ),
-                ephemeral=True
-            )
 
-        if not interaction.user.voice:
+        if voice_client and voice_client.channel and interaction.user.voice and interaction.user.voice.channel != voice_client.channel:
             await interaction.followup.send(
-                embed=discord.Embed(
-                    title="❌ Voice Channel Required",
-                    description="**You need to be in a voice channel!**\n\n🎧 *Join a voice channel and try again*",
+                embed=self.make_embed(
+                    title="Wrong voice channel",
+                    description="You must be in the same voice channel as the bot.",
                     color=0xe74c3c
                 ),
                 ephemeral=True
             )
             return
 
-        loading_embed = discord.Embed(
-            title="🎵 Loading Music",
-            description=f"🔍 **Searching for:** {song}\n\n⏳ *Processing your request...*",
+        if not interaction.user.voice:
+            await interaction.followup.send(
+                embed=self.make_embed(
+                    title="Voice channel required",
+                    description="Join a voice channel and try again.",
+                    color=0xe74c3c
+                ),
+                ephemeral=True
+            )
+            return
+
+        loading_embed = self.make_embed(
+            title="Loading",
+            description=f"Searching for: {song}",
             color=0x3498db
         )
-        loading_embed.set_thumbnail(url="https://i.pinimg.com/564x/bc/0b/c2/bc0bc24abc32472c8d726c7bd0fc8f59.jpg")
-
-        loading_embed.timestamp = discord.utils.utcnow()
         loading_message = await interaction.followup.send(embed=loading_embed)
+
         search_query = song if song.startswith("http") else f"ytsearch:{song}"
-        
+
         try:
             info = await song_loader.extract_info_async(search_query)
         except Exception as e:
             await interaction.followup.send(
-                embed=discord.Embed(
-                    title="❌ Error",
-                    description=f"**Failed to load video/playlist**\n\n```\n{e}\n```",
+                embed=self.make_embed(
+                    title="Error",
+                    description=f"Failed to load video/playlist.\n\n{e}",
                     color=0xe74c3c
                 ),
                 ephemeral=True
             )
             return
 
+        processing_message = None
+
         if "entries" in info:
             entries = [e for e in info["entries"] if e]
-            
-            processing_embed = discord.Embed(
-                title="🎵 Processing Playlist...",
-                description=f"📋 **Found {len(entries)} songs**\n\n⏳ *Adding to queue...*",
+
+            processing_embed = self.make_embed(
+                title="Processing playlist",
+                description=f"Found {len(entries)} items.\nAdding to queue...",
                 color=0xf39c12
             )
-            processing_embed.set_thumbnail(url="https://i.imgur.com/ZKwSz4A.gif")
-            processing_embed.add_field(
-                name="📊 **Progress**",
-                value="```\n🔄 Processing songs...\n📋 Building queue...\n```",
-                inline=False
-            )
-            processing_embed.timestamp = discord.utils.utcnow()
-            
+
             processing_message = await interaction.channel.send(embed=processing_embed)
-            
+
             processed_songs = await self.process_song_entries(entries, interaction.guild.id)
-            
-            titles_list = "\n".join([f"🎵 {song[1][0]}" for song in processed_songs[:10]])
+
+            titles_list = "\n".join([f"- {song['title']}" for song in processed_songs[:10]])
             if len(processed_songs) > 10:
-                titles_list += f"\n\n*... and {len(processed_songs) - 10} more songs*"
-            
-            success_embed = discord.Embed(
-                title="📋 Playlist Added Successfully!",
-                description=f"✅ **{len(processed_songs)} songs added to queue**\n\n{titles_list}",
-                color=0x27ae60
+                titles_list += f"\n\n...and {len(processed_songs) - 10} more."
+
+            initial_len = max(0, len(queue.queue) - len(processed_songs))
+            wait_seconds = sum(song['duration'] for song in queue.queue[:initial_len]) if initial_len > 0 else 0
+
+            success_embed = self.make_embed(
+                title="Playlist added",
+                description=f"{len(processed_songs)} songs added to queue.\n\n{titles_list}",
+                color=0x2ecc71,
+                thumbnail=(entries[0].get("thumbnail") if entries else None),
+                fields=[
+                    ("Position", f"```\n#{initial_len + 1}\n```", True),
+                    ("Estimated time", f"```\n{self.format_time(wait_seconds)}\n```", True),
+                ]
             )
-            success_embed.set_thumbnail(url=entries[0].get("thumbnail") if entries else None)
-            success_embed.add_field(
-                name="📊 **Queue Stats**",
-                value=f"```\n📋 Total Songs: {len(processed_songs)}\n⏳ Estimated Time: {sum(song[1][3] for song in processed_songs) // 60} min\n```",
-                inline=False
-            )
-            success_embed.timestamp = discord.utils.utcnow()
-            
+
             await interaction.channel.send(embed=success_embed)
-            
+
         else:
             processed_song = await self.process_single_entry(info)
             if processed_song:
                 queue.add(processed_song)
-                title = processed_song[1][0]
-                thumbnail = processed_song[1][1]
-                duration = processed_song[1][3]
-                
-                success_embed = discord.Embed(
-                    title="🎵 Song Added to Queue!",
-                    description=f"**{title}**\n\n✅ *Successfully added to queue*",
-                    color=0x27ae60
+                title = processed_song['title']
+                thumbnail = processed_song['thumbnail']
+                duration = processed_song['duration']
+
+                success_embed = self.make_embed(
+                    title="Added to queue",
+                    description=title,
+                    color=0x2ecc71,
+                    thumbnail=thumbnail,
+                    fields=[
+                        ("Duration", f"```\n{self.format_time(duration)}\n```", True),
+                        ("Position", f"```\n#{len(queue.queue)}\n```", True),
+                    ]
                 )
-                success_embed.set_thumbnail(url=thumbnail)
-                success_embed.add_field(
-                    name="⏱️ **Duration**",
-                    value=f"```\n{self.format_time(duration)}\n```",
-                    inline=True
-                )
-                success_embed.add_field(
-                    name="📋 **Queue Position**",
-                    value=f"```\n#{len(queue.queue)}\n```",
-                    inline=True
-                )
-                success_embed.timestamp = discord.utils.utcnow()
-                
+
                 await interaction.channel.send(embed=success_embed)
 
-        await processing_message.delete()
-        await loading_message.delete()
+        try:
+            if processing_message:
+                await processing_message.delete()
+        except Exception:
+            pass
+        try:
+            await loading_message.delete()
+        except Exception:
+            pass
 
+        voice_client = interaction.guild.voice_client
         if not voice_client or not voice_client.is_connected():
             channel = interaction.user.voice.channel
             await channel.connect(self_deaf=True)
             voice_client = interaction.guild.voice_client
             voice_channel = voice_client.channel
-            processed_song = await self.process_single_entry(info)
-            
+
             if SET_VC_STATUS_TO_MUSIC_PLAYING:
-                current_song = processed_song[1][0] if processed_song else "Music"
-                await voice_channel.edit(status=f"Listening to: {current_song}")
-        
-        if not queue.playing and not voice_client.is_playing() and not queue.is_empty():
+                current_song = (queue.peek()['title'] if queue.peek() else "Music")
+                try:
+                    await voice_channel.edit(status=f"Listening to: {current_song}")
+                except Exception:
+                    pass
+
+        if not queue.playing and not voice_client.is_playing():
             await self.play_next(guild=interaction.guild, voice_client=voice_client, interaction=interaction)
 
     @app_commands.command(name="skip", description="skips the current song")
     async def skip(self, interaction: discord.Interaction):
         voice_client = interaction.guild.voice_client
-        # Check if user is timed out
         if await self.check_timeout_decorator(interaction):
             return
 
         if not voice_client or not voice_client.is_playing():
             await interaction.response.send_message(
-                embed=discord.Embed(
-                    title="❌ Nothing Playing",
-                    description="**No music is currently playing**\n\n🎵 *Use `/play` to start playing music*",
+                embed=self.make_embed(
+                    title="Nothing playing",
+                    description="Use /play to start music.",
                     color=0xe74c3c
                 ),
                 ephemeral=True
@@ -984,9 +1055,9 @@ class MusicCog(commands.Cog):
 
         if not interaction.user.voice or interaction.user.voice.channel != voice_client.channel:
             await interaction.response.send_message(
-                embed=discord.Embed(
-                    title="❌ Wrong Voice Channel",
-                    description="**You must be in the same voice channel as the bot!**\n\n🎧 *Join the bot's voice channel to use this command*",
+                embed=self.make_embed(
+                    title="Wrong voice channel",
+                    description="You must be in the same voice channel as the bot.",
                     color=0xe74c3c
                 ),
                 ephemeral=True
@@ -1002,46 +1073,36 @@ class MusicCog(commands.Cog):
         next_song = queue.queue[0] if queue and queue.queue else None
 
         if next_song:
-            source, metadata = next_song
-            title, thumbnail = metadata[0], metadata[1]
-            
-            skip_embed = discord.Embed(
-                title="⏭️ Song Skipped!",
-                description=f"🎵 **Now Playing:** {title}\n\n✅ *Successfully skipped to next song*",
-                color=0x3498db
+            title = next_song['title']
+            thumbnail = next_song['thumbnail']
+
+            skip_embed = self.make_embed(
+                title="Skipped",
+                description=f"Up next: {title}",
+                color=0x3498db,
+                thumbnail=thumbnail,
+                fields=[
+                    ("Songs left", f"```\n{len(queue.queue) - 1}\n```", True)
+                ]
             )
-            skip_embed.set_thumbnail(url=thumbnail)
-            skip_embed.add_field(
-                name="📋 **Queue Info**",
-                value=f"```\n📋 Songs Left: {len(queue.queue) - 1}\n⏭️ Action: Skip\n```",
-                inline=False
-            )
-            skip_embed.timestamp = discord.utils.utcnow()
-            
+
             await interaction.response.send_message(embed=skip_embed)
         else:
-            skip_embed = discord.Embed(
-                title="⏭️ Song Skipped!",
-                description="**No more songs in queue**\n\n🎵 *Use `/play` to add more music*",
+            skip_embed = self.make_embed(
+                title="Skipped",
+                description="Queue is empty.",
                 color=0x95a5a6
             )
-            skip_embed.add_field(
-                name="📋 **Queue Status**",
-                value="```\n📋 Songs Left: 0\n⏭️ Action: Skip\n🎵 Queue Empty\n```",
-                inline=False
-            )
-            skip_embed.timestamp = discord.utils.utcnow()
-            
+
             await interaction.response.send_message(embed=skip_embed)
 
         if queue and not queue.playing:
             await self.play_next(interaction.guild, voice_client, interaction=interaction)
-    
+
     @app_commands.command(name="queue", description="lists queued songs")
     async def list(self, interaction: discord.Interaction):
         queue = guild_queues.get(interaction.guild.id)
         wait_time = 0
-        # Check if user is timed out
         if await self.check_timeout_decorator(interaction):
             return
 
@@ -1049,9 +1110,9 @@ class MusicCog(commands.Cog):
         if voice_client and voice_client.channel:
             if not interaction.user.voice or interaction.user.voice.channel != voice_client.channel:
                 await interaction.response.send_message(
-                    embed=discord.Embed(
-                        title="❌ Wrong Voice Channel",
-                        description="**You must be in the same voice channel as the bot!**\n\n🎧 *Join the bot's voice channel to use this command*",
+                    embed=self.make_embed(
+                        title="Wrong voice channel",
+                        description="You must be in the same voice channel as the bot.",
                         color=0xe74c3c
                     ),
                     ephemeral=True
@@ -1059,145 +1120,128 @@ class MusicCog(commands.Cog):
                 return
 
         if not queue or not queue.queue:
-            empty_embed = discord.Embed(
-                title="📋 Queue is Empty",
-                description="**No songs in queue**\n\n🎵 *Use `/play` to add some music*",
-                color=0x95a5a6
+            empty_embed = self.make_embed(
+                title="Queue is empty",
+                description="Use /play to add some music.",
+                color=0x95a5a6,
+                fields=[
+                    ("Quick start", "```\n/play <song>\n/chart\n```", False)
+                ]
             )
-            empty_embed.add_field(
-                name="💡 **Quick Start**",
-                value="```\n🎵 /play <song name>\n📊 /chart - Play trending\n✨ /inspire - Random song\n```",
-                inline=False
-            )
-            empty_embed.timestamp = discord.utils.utcnow()
-            
             await interaction.response.send_message(embed=empty_embed)
             return
 
-        embed = discord.Embed(
-            title="📋 Music Queue",
-            description=f"🎵 **{len(queue.queue)} songs in queue**\n\n*Here's what's coming up next:*",
-            color=0x9b59b6
+        embed = self.make_embed(
+            title=f"Queue ({len(queue.queue)})",
+            description="Upcoming tracks:",
+            color=0x5865F2,
+            author_name=interaction.user.display_name,
+            author_icon=safe_avatar(interaction.user),
+            footer="Use /skip to skip the current song",
+            footer_icon=safe_avatar(self.bot.user),
+            thumbnail=safe_avatar(interaction.user)
         )
-        
-        display_count = min(15, len(queue.queue))
-        for i, (source, song_data) in enumerate(queue.queue[:display_count]):
-            title = song_data[0]
-            duration = song_data[3]
 
+        display_count = min(15, len(queue.queue))
+        for i, song_data in enumerate(queue.queue[:display_count]):
+            title = song_data['title']
+            duration = song_data['duration']
             embed.add_field(
-                name=f"🎵 **{i + 1}.** {title}",
-                value=f"```\n⏱️ Duration: {self.format_time(duration)}\n🕒 Starts in: {self.format_time(wait_time)}\n```",
+                name=f"{i + 1}. {title}",
+                value=f"```\nDuration: {self.format_time(duration)} • Starts in: {self.format_time(wait_time)}\n```",
                 inline=False
             )
             wait_time += duration
-        
+
+        total_duration = self.format_time(sum(song['duration'] for song in queue.queue))
         if len(queue.queue) > display_count:
             embed.add_field(
-                name="🎵 **More Songs...**", 
-                value=f"```\n📋 +{len(queue.queue) - display_count} more songs\n⏱️ Total Duration: {self.format_time(sum(song[1][3] for song in queue.queue))}\n```", 
+                name="More",
+                value=f"```\n+{len(queue.queue) - display_count} more\nTotal duration: {total_duration}\n```",
                 inline=False
             )
-        
-        embed.add_field(
-            name="📊 **Queue Statistics**",
-            value=f"```\n📋 Total Songs: {len(queue.queue)}\n⏱️ Total Duration: {self.format_time(sum(song[1][3] for song in queue.queue))}\n🎵 Status: {'Playing' if queue.playing else 'Ready'}\n```",
-            inline=False
-        )
-        
-        embed.set_author(
-            name=f"🎧 Requested by {interaction.user.display_name}",
-            icon_url=interaction.user.avatar.url
-        )
-        embed.set_footer(
-            text="🎵 Music Bot • Use /skip to skip current song",
-            icon_url=self.bot.user.avatar.url if self.bot.user.avatar else None
-        )
-        embed.set_thumbnail(url=interaction.user.avatar.url)
-        embed.timestamp = discord.utils.utcnow()
+        else:
+            embed.add_field(
+                name="Summary",
+                value=f"```\nTotal duration: {total_duration}\n```",
+                inline=False
+            )
 
         await interaction.response.send_message(embed=embed)
-    
-    @app_commands.command(name="disconnect", description="Disconnects the Bot")
+
+    @app_commands.command(name="stop", description="Disconnects the Bot")
     async def leave(self, i: discord.Interaction):
-        # Check if user is timed out
         if await self.check_timeout_decorator(i):
             return
         voice_client = i.guild.voice_client
         if voice_client and voice_client.channel:
             if not i.user.voice or i.user.voice.channel != voice_client.channel:
                 await i.response.send_message(
-                    embed=discord.Embed(
-                        title="❌ Wrong Voice Channel",
-                        description="**You must be in the same voice channel as the bot!**\n\n🎧 *Join the bot's voice channel to use this command*",
+                    embed=self.make_embed(
+                        title="Wrong voice channel",
+                        description="You must be in the same voice channel as the bot.",
                         color=0xe74c3c
                     ),
                     ephemeral=True
                 )
                 return
-                
+
         queue = guild_queues.get(i.guild.id)
-        
+
         if queue and queue.queue:
-            total_duration = sum(song_data[3] for source, song_data in queue.queue)
+            total_duration = sum(song_data[3] for _source, song_data in queue.queue)
+            cleared_count = len(queue.queue)
             queue.clear()
         else:
             total_duration = 0
-        
-        embed = discord.Embed(
-            title="🛑 Music Bot Stopped",
-            description="**Successfully disconnected from voice channel**\n\n👋 *Thanks for using the music bot!*",
-            color=0xe74c3c
+            cleared_count = 0
+
+        embed = self.make_embed(
+            title="Disconnected",
+            description="Left the voice channel.",
+            color=0xe74c3c,
+            author_name=i.user.display_name,
+            author_icon=safe_avatar(i.user),
+            footer="See you next time!",
+            footer_icon=safe_avatar(self.bot.user),
+            thumbnail=safe_avatar(i.user),
+            fields=[
+                ("Session summary",
+                 f"```\nTime left in queue: {self.format_time(total_duration)}\nSongs cleared: {cleared_count}\n```",
+                 False)
+            ]
         )
-        embed.add_field(
-            name="📊 **Session Stats**",
-            value=f"```\n⏱️ Time Left in Queue: {self.format_time(total_duration)}\n🎵 Songs Cleared: {len(queue.queue) if queue else 0}\n🛑 Action: Stop\n```",
-            inline=False
-        )
-        embed.add_field(
-            name="💡 **Quick Restart**",
-            value="```\n🎵 /play <song> - Start playing\n📊 /chart - Play trending\n✨ /inspire - Random song\n```",
-            inline=False
-        )
-        embed.set_author(
-            name=f"🎧 Stopped by {i.user.display_name}",
-            icon_url=i.user.avatar.url
-        )
-        embed.set_footer(
-            text="🎵 Music Bot • See you next time!",
-            icon_url=self.bot.user.avatar.url if self.bot.user.avatar else None
-        )
-        embed.set_thumbnail(url=i.user.avatar.url)
-        embed.timestamp = discord.utils.utcnow()
-        
+
         if i.guild.voice_client:
             voice_channel = voice_client.channel
-            await voice_channel.edit(status=None)
+            try:
+                await voice_channel.edit(status=None)
+            except Exception:
+                pass
             await i.guild.voice_client.disconnect()
             await i.response.send_message(embed=embed)
             await self.send_static_message()
         else:
             await i.response.send_message(
-                embed=discord.Embed(
-                    title="❌ Not Connected",
-                    description="**Bot is not connected to a voice channel**\n\n🎧 *Nothing to disconnect from*",
+                embed=self.make_embed(
+                    title="Not connected",
+                    description="The bot is not connected to a voice channel.",
                     color=0xe74c3c
                 )
             )
-    
+
     @app_commands.command(name="shuffle", description="Shuffles the queue")
     async def shuffle(self, interaction: discord.Interaction):
-        # Check if user is timed out
         if await self.check_timeout_decorator(interaction):
             return
-        
+
         voice_client = interaction.guild.voice_client
         if voice_client and voice_client.channel:
             if not interaction.user.voice or interaction.user.voice.channel != voice_client.channel:
                 await interaction.response.send_message(
-                    embed=discord.Embed(
-                        title="❌ Wrong Voice Channel",
-                        description="**You must be in the same voice channel as the bot!**\n\n🎧 *Join the bot's voice channel to use this command*",
+                    embed=self.make_embed(
+                        title="Wrong voice channel",
+                        description="You must be in the same voice channel as the bot.",
                         color=0xe74c3c
                     ),
                     ephemeral=True
@@ -1205,24 +1249,29 @@ class MusicCog(commands.Cog):
                 return
 
         queue = guild_queues.get(interaction.guild.id)
-        
+
         if not queue or not queue.queue:
             await interaction.response.send_message(
-                embed=discord.Embed(
-                    title="📋 Queue is Empty",
-                    description="**No songs to shuffle**\n\n🎵 *Use `/play` to add some music first*",
+                embed=self.make_embed(
+                    title="Queue is empty",
+                    description="Nothing to shuffle.",
                     color=0x95a5a6
                 ),
                 ephemeral=True
             )
             return
-        
+
         random.shuffle(queue.queue)
-        
-        embed = discord.Embed(
-            title="🔀 Queue Shuffled!",
-            description=f"🎲 **{len(queue.queue)} songs shuffled**\n\n*Here's the new order:*",
-            color=0x9b59b6
+
+        embed = self.make_embed(
+            title="Queue shuffled",
+            description=f"{len(queue.queue)} songs reshuffled.",
+            color=0x5865F2,
+            author_name=interaction.user.display_name,
+            author_icon=safe_avatar(interaction.user),
+            footer="Enjoy!",
+            footer_icon=safe_avatar(self.bot.user),
+            thumbnail=safe_avatar(interaction.user)
         )
 
         wait_time = 0
@@ -1232,50 +1281,39 @@ class MusicCog(commands.Cog):
             duration = song_data[3]
 
             embed.add_field(
-                name=f"🎵 **{i + 1}.** {title}",
-                value=f"```\n⏱️ Duration: {self.format_time(duration)}\n🕒 Starts in: {self.format_time(wait_time)}\n```",
+                name=f"{i + 1}. {title}",
+                value=f"```\nDuration: {self.format_time(duration)} • Starts in: {self.format_time(wait_time)}\n```",
                 inline=False
             )
             wait_time += duration
-            
+
+        total_duration = self.format_time(sum(song['duration'] for song in queue.queue))
         if len(queue.queue) > display_count:
             embed.add_field(
-                name="🎵 **More Songs...**", 
-                value=f"```\n📋 +{len(queue.queue) - display_count} more songs\n⏱️ Total Duration: {self.format_time(sum(song[1][3] for song in queue.queue))}\n```", 
+                name="More",
+                value=f"```\n+{len(queue.queue) - display_count} more\nTotal duration: {total_duration}\n```",
                 inline=False
             )
-        
-        embed.add_field(
-            name="📊 **Shuffle Stats**",
-            value=f"```\n🔀 Action: Shuffle\n📋 Songs: {len(queue.queue)}\n⏱️ Total Time: {self.format_time(sum(song[1][3] for song in queue.queue))}\n```",
-            inline=False
-        )
-        
-        embed.set_author(
-            name=f"🎧 Shuffled by {interaction.user.display_name}",
-            icon_url=interaction.user.avatar.url
-        )
-        embed.set_footer(
-            text="🎵 Music Bot • Enjoy your shuffled playlist!",
-            icon_url=self.bot.user.avatar.url if self.bot.user.avatar else None
-        )
-        embed.set_thumbnail(url=interaction.user.avatar.url)
-        embed.timestamp = discord.utils.utcnow()
-        
+        else:
+            embed.add_field(
+                name="Summary",
+                value=f"```\nTotal duration: {total_duration}\n```",
+                inline=False
+            )
+
         await interaction.response.send_message(embed=embed)
-    
+
     @app_commands.command(name="pause", description="Pauses or resumes the playback")
     async def pause(self, interaction: discord.Interaction):
-        # Check if user is timed out
         if await self.check_timeout_decorator(interaction):
             return
         voice_client = interaction.guild.voice_client
 
         if not voice_client or (not voice_client.is_playing() and not voice_client.is_paused()):
             await interaction.response.send_message(
-                embed=discord.Embed(
-                    title="❌ Nothing Playing",
-                    description="**No music is currently playing**\n\n🎵 *Use `/play` to start playing music*",
+                embed=self.make_embed(
+                    title="Nothing playing",
+                    description="Use /play to start music.",
                     color=0xe74c3c
                 ),
                 ephemeral=True
@@ -1284,9 +1322,9 @@ class MusicCog(commands.Cog):
 
         if not interaction.user.voice or interaction.user.voice.channel != voice_client.channel:
             await interaction.response.send_message(
-                embed=discord.Embed(
-                    title="❌ Wrong Voice Channel", 
-                    description="**You must be in the same voice channel as the bot!**\n\n🎧 *Join the bot's voice channel to use this command*",
+                embed=self.make_embed(
+                    title="Wrong voice channel",
+                    description="You must be in the same voice channel as the bot.",
                     color=0xe74c3c
                 ),
                 ephemeral=True
@@ -1295,40 +1333,26 @@ class MusicCog(commands.Cog):
 
         if voice_client.is_paused():
             voice_client.resume()
-            
-            embed = discord.Embed(
-                title="▶️ Music Resumed!",
-                description="**Playback has been resumed**\n\n🎵 *Music is now playing again*",
-                color=0x27ae60
-            )
-            embed.add_field(
-                name="🎵 **Status**",
-                value="```\n▶️ Action: Resume\n🎵 Status: Playing\n```",
-                inline=False
+            embed = self.make_embed(
+                title="Resumed",
+                description="Playback resumed.",
+                color=0x2ecc71,
+                author_name=interaction.user.display_name,
+                author_icon=safe_avatar(interaction.user),
+                footer="Use /pause to toggle",
+                footer_icon=safe_avatar(self.bot.user)
             )
         else:
             voice_client.pause()
-            
-            embed = discord.Embed(
-                title="⏸️ Music Paused!",
-                description="**Playback has been paused**\n\n🎵 *Use `/pause` again to resume*",
-                color=0xf39c12
+            embed = self.make_embed(
+                title="Paused",
+                description="Playback paused.",
+                color=0xf39c12,
+                author_name=interaction.user.display_name,
+                author_icon=safe_avatar(interaction.user),
+                footer="Use /pause to toggle",
+                footer_icon=safe_avatar(self.bot.user)
             )
-            embed.add_field(
-                name="🎵 **Status**",
-                value="```\n⏸️ Action: Pause\n🎵 Status: Paused\n```",
-                inline=False
-            )
-
-        embed.set_author(
-            name=f"🎧 Controlled by {interaction.user.display_name}",
-            icon_url=interaction.user.avatar.url
-        )
-        embed.set_footer(
-            text="🎵 Music Bot • Use /pause to toggle playback",
-            icon_url=self.bot.user.avatar.url if self.bot.user.avatar else None
-        )
-        embed.timestamp = discord.utils.utcnow()
 
         await interaction.response.send_message(embed=embed)
 
@@ -1343,7 +1367,7 @@ class MusicCog(commands.Cog):
                 members_in_channel = [m for m in before.channel.members if not m.bot]
                 if len(members_in_channel) == 0:
                     await asyncio.sleep(5)
-                    
+
                     if voice_client.is_connected():
                         current_members = [m for m in voice_client.channel.members if not m.bot]
                         if len(current_members) == 0:
@@ -1354,7 +1378,10 @@ class MusicCog(commands.Cog):
                                 queue.playing = False
                                 del guild_queues[guild_id]
                             voice_channel = voice_client.channel
-                            voice_channel.edit(status=None)
+                            try:
+                                await voice_channel.edit(status=None)
+                            except Exception:
+                                pass
                             await voice_client.disconnect(force=True)
                             try:
                                 channel = await self.bot.fetch_channel(I_CHANNEL)
@@ -1365,7 +1392,7 @@ class MusicCog(commands.Cog):
                             except Exception as e:
                                 print(f"Error sending auto-disconnect message: {e}")
 
-    @commands.Cog.listener()
+    @commands.Cog.listener("on_voice_state_update")
     async def on_voice_state_update_bot_kick(self, member, before, after):
         if member.id == self.bot.user.id and before.channel is not None and after.channel is None:
             guild_id = before.channel.guild.id
@@ -1380,47 +1407,47 @@ class MusicCog(commands.Cog):
                     await self.send_static_message()
             except Exception as e:
                 print(f"Error sending disconnect message: {e}")
-                
+
     @app_commands.command(name="musicmute", description="Timeout a user from using music commands")
     @app_commands.describe(user="The user to timeout", duration="Duration in minutes")
     async def timeout_user_command(self, interaction: discord.Interaction, user: discord.Member, duration: int):
         await self.timeout_user(interaction, user, duration)
-    
+
     async def timeout_user(self, interaction: discord.Interaction, user: discord.Member, duration: int):
-        if not interaction.user.guild_permissions.manage_messages:
+        if not interaction.user.guild_permissions.kick_members:
             await interaction.response.send_message(
-                embed=discord.Embed(
-                    title="❌ No Permission",
-                    description="**You don't have permission to timeout users!**",
+                embed=self.make_embed(
+                    title="No permission",
+                    description="You don't have permission to timeout users.",
                     color=0xe74c3c
                 ),
                 ephemeral=True
             )
             return
-        
-        if duration <= 0 or duration > 2880:
+
+        if duration <= 0 or duration > 10000:
             await interaction.response.send_message(
-                embed=discord.Embed(
-                    title="❌ Invalid Duration",
-                    description="**Duration must be between 1 and 2880 minutes (48 hours)**",
+                embed=self.make_embed(
+                    title="Invalid duration",
+                    description="Duration must be between 1 and 10000 minutes.",
                     color=0xe74c3c
                 ),
                 ephemeral=True
             )
             return
-        
+
         timeout_file = "timeouts.json"
         timeouts = {}
-        
+
         if os.path.exists(timeout_file):
             try:
                 with open(timeout_file, 'r') as f:
                     timeouts = json.load(f)
             except json.JSONDecodeError:
                 timeouts = {}
-        
+
         end_time = datetime.now() + timedelta(minutes=duration)
-        
+
         timeouts[str(user.id)] = {
             "user_id": user.id,
             "username": user.display_name,
@@ -1431,69 +1458,58 @@ class MusicCog(commands.Cog):
             "duration_minutes": duration,
             "guild_id": interaction.guild.id
         }
-        
+
         try:
             with open(timeout_file, 'w') as f:
                 json.dump(timeouts, f, indent=2)
         except Exception as e:
             await interaction.response.send_message(
-                embed=discord.Embed(
-                    title="❌ Error",
-                    description=f"**Failed to save timeout data**\n\n```\n{e}\n```",
+                embed=self.make_embed(
+                    title="Error",
+                    description=f"Failed to save timeout data.\n\n{e}",
                     color=0xe74c3c
                 ),
                 ephemeral=True
             )
             return
-        
-        embed = discord.Embed(
-            title="⏰ User Timed Out",
-            description=f"**{user.display_name}** has been timed out from music commands",
-            color=0xe67e22
+
+        embed = self.make_embed(
+            title="User timed out",
+            description=f"{user.display_name} has been muted from music commands.",
+            color=0xe67e22,
+            thumbnail=safe_avatar(user),
+            fields=[
+                ("Duration", f"```\n{duration} minutes\n```", True),
+                ("Ends at", f"```\n{end_time.strftime('%H:%M:%S')}\n```", True),
+                ("Moderator", f"```\n{interaction.user.display_name}\n```", True),
+            ]
         )
-        embed.add_field(
-            name="⏱️ **Duration**",
-            value=f"```\n{duration} minutes\n```",
-            inline=True
-        )
-        embed.add_field(
-            name="🕒 **Ends At**",
-            value=f"```\n{end_time.strftime('%H:%M:%S')}\n```",
-            inline=True
-        )
-        embed.add_field(
-            name="👮 **Moderator**",
-            value=f"```\n{interaction.user.display_name}\n```",
-            inline=True
-        )
-        embed.set_thumbnail(url=user.avatar.url if user.avatar else None)
-        embed.timestamp = discord.utils.utcnow()
-        
+
         await interaction.response.send_message(embed=embed, ephemeral=True, delete_after=10, silent=True)
 
     def cleanup_expired_timeouts(self):
         timeout_file = "timeouts.json"
-        
+
         if not os.path.exists(timeout_file):
             return
-        
+
         try:
             with open(timeout_file, 'r') as f:
                 timeouts = json.load(f)
         except (json.JSONDecodeError, FileNotFoundError):
             return
-        
+
         current_time = datetime.now()
         expired_users = []
-        
-        for user_id, timeout_data in timeouts.items():
+
+        for user_id, timeout_data in list(timeouts.items()):
             end_time = datetime.fromisoformat(timeout_data["end_time"])
             if current_time > end_time:
                 expired_users.append(user_id)
-        
+
         for user_id in expired_users:
             del timeouts[user_id]
-        
+
         if expired_users:
             try:
                 with open(timeout_file, 'w') as f:
@@ -1503,22 +1519,22 @@ class MusicCog(commands.Cog):
 
     def is_user_timed_out(self, user_id: int) -> bool:
         self.cleanup_expired_timeouts()
-        
+
         timeout_file = "timeouts.json"
-        
+
         if not os.path.exists(timeout_file):
             return False
-        
+
         try:
             with open(timeout_file, 'r') as f:
                 timeouts = json.load(f)
         except (json.JSONDecodeError, FileNotFoundError):
             return False
-        
+
         user_key = str(user_id)
         if user_key not in timeouts:
             return False
-        
+
         end_time = datetime.fromisoformat(timeouts[user_key]["end_time"])
         if datetime.now() > end_time:
             del timeouts[user_key]
@@ -1528,7 +1544,7 @@ class MusicCog(commands.Cog):
             except Exception:
                 pass
             return False
-        
+
         return True
 
     async def check_timeout_decorator(self, interaction: discord.Interaction):
@@ -1536,33 +1552,22 @@ class MusicCog(commands.Cog):
             timeout_file = "timeouts.json"
             with open(timeout_file, 'r') as f:
                 timeouts = json.load(f)
-            
+
             user_timeout = timeouts[str(interaction.user.id)]
             end_time = datetime.fromisoformat(user_timeout["end_time"])
-            remaining_minutes = int((end_time - datetime.now()).total_seconds() / 60)
-            
-            embed = discord.Embed(
-                title="⏰ You Are Muted.",
-                description=f"**You cannot use music commands right now**\n\n🚫 *Timeout active*",
-                color=0xe74c3c
+            remaining_minutes = max(0, int((end_time - datetime.now()).total_seconds() / 60))
+
+            embed = self.make_embed(
+                title="Muted",
+                description="You cannot use music commands right now.",
+                color=0xe74c3c,
+                fields=[
+                    ("Time remaining", f"```\n{remaining_minutes} minutes\n```", True),
+                    ("Ends at", f"```\n{end_time.strftime('%H:%M:%S')}\n```", True),
+                    ("By", f"```\n{user_timeout['timeout_by_name']}\n```", True),
+                ]
             )
-            embed.add_field(
-                name="⏱️ **Time Remaining**",
-                value=f"```\n{remaining_minutes} minutes\n```",
-                inline=True
-            )
-            embed.add_field(
-                name="🕒 **Ends At**",
-                value=f"```\n{end_time.strftime('%H:%M:%S')}\n```",
-                inline=True
-            )
-            embed.add_field(
-                name="👮 **Timed Out By**",
-                value=f"```\n{user_timeout['timeout_by_name']}\n```",
-                inline=True
-            )
-            embed.timestamp = discord.utils.utcnow()
-            
+
             await interaction.response.send_message(embed=embed, ephemeral=True)
             return True
         return False
@@ -1570,78 +1575,332 @@ class MusicCog(commands.Cog):
     @app_commands.command(name="unmusicmute", description="Remove timeout from a user")
     @app_commands.describe(user="The user to remove timeout from")
     async def untimeout_user(self, interaction: discord.Interaction, user: discord.Member):
-        if not interaction.user.guild_permissions.manage_messages:
+        if not interaction.user.guild_permissions.kick_members:
             await interaction.response.send_message(
-                embed=discord.Embed(
-                    title="❌ No Permission",
-                    description="**You don't have permission to remove timeouts!**\n\n🔒 *Requires: Manage Messages*",
+                embed=self.make_embed(
+                    title="No permission",
+                    description="You don't have permission to remove timeouts.",
                     color=0xe74c3c
                 ),
                 ephemeral=True
             )
             return
-        
+
         timeout_file = "timeouts.json"
-        
+
         if not os.path.exists(timeout_file):
             await interaction.response.send_message(
-                embed=discord.Embed(
-                    title="❌ No Timeouts",
-                    description="**No timeout data found**",
+                embed=self.make_embed(
+                    title="No timeouts",
+                    description="No timeout data found.",
                     color=0xe74c3c
                 ),
                 ephemeral=True
             )
             return
-        
+
         try:
             with open(timeout_file, 'r') as f:
                 timeouts = json.load(f)
         except json.JSONDecodeError:
             timeouts = {}
-        
+
         user_key = str(user.id)
         if user_key not in timeouts:
             await interaction.response.send_message(
-                embed=discord.Embed(
-                    title="❌ Not Timed Out",
-                    description=f"**{user.display_name}** is not currently timed out",
+                embed=self.make_embed(
+                    title="Not muted",
+                    description=f"{user.display_name} is not currently muted.",
                     color=0xe74c3c
                 ),
                 ephemeral=True
             )
             return
-        
+
         del timeouts[user_key]
-        
+
         try:
             with open(timeout_file, 'w') as f:
                 json.dump(timeouts, f, indent=2)
         except Exception as e:
             await interaction.response.send_message(
-                embed=discord.Embed(
-                    title="❌ Error",
-                    description=f"**Failed to save timeout data**\n\n```\n{e}\n```",
+                embed=self.make_embed(
+                    title="Error",
+                    description=f"Failed to save timeout data.\n\n{e}",
                     color=0xe74c3c
                 ),
                 ephemeral=True
             )
             return
-        
-        embed = discord.Embed(
-            title="✅ Timeout Removed",
-            description=f"**{user.display_name}** can now use music commands again",
-            color=0x27ae60
+
+        embed = self.make_embed(
+            title="Timeout removed",
+            description=f"{user.display_name} can now use music commands again.",
+            color=0x2ecc71,
+            thumbnail=safe_avatar(user),
+            fields=[
+                ("Removed by", f"```\n{interaction.user.display_name}\n```", True)
+            ]
         )
-        embed.add_field(
-            name="👮 **Removed By**",
-            value=f"```\n{interaction.user.display_name}\n```",
-            inline=True
-        )
-        embed.set_thumbnail(url=user.avatar.url if user.avatar else None)
-        embed.timestamp = discord.utils.utcnow()
-        
+
         await interaction.response.send_message(embed=embed)
+    
+    @app_commands.command(name="clearqueue", description="Vote to clear the entire queue")
+    async def clear_queue(self, interaction: discord.Interaction):
+        if await self.check_timeout_decorator(interaction):
+            return
+
+        voice_client = interaction.guild.voice_client
+
+        if not interaction.user.voice:
+            await interaction.response.send_message(
+                embed=self.make_embed(
+                    title="Voice channel required",
+                    description="Join a voice channel and try again.",
+                    color=0xe74c3c
+                ),
+                ephemeral=True
+            )
+            return
+
+        if interaction.user.voice.channel != voice_client.channel:
+            await interaction.response.send_message(
+                embed=self.make_embed(
+                    title="Wrong voice channel",
+                    description="You must be in the same voice channel as the bot to start a vote.",
+                    color=0xe74c3c
+                ),
+                ephemeral=True
+            )
+            return
+
+        guild_id = interaction.guild.id
+        queue = guild_queues.get(guild_id)
+
+        if interaction.user.guild_permissions.kick_members:
+            cleared_count = len(queue.queue)
+            total_duration = sum(song['duration'] for song in queue.queue)
+            queue.clear()
+            queue.playing = False
+            try:
+                voice_client.stop()
+            except Exception:
+                pass
+
+            embed = self.make_embed(
+                title="Queue cleared",
+                description=f"Cleared by {interaction.user.display_name}.",
+                color=0x2ecc71,
+                thumbnail=safe_avatar(interaction.user),
+                fields=[
+                    ("Songs cleared", f"```\n{cleared_count}\n```", True),
+                    ("Time removed", f"```\n{self.format_time(total_duration)}\n```", True)
+                ]
+            )
+            await interaction.response.send_message(embed=embed)
+            return
+
+        voters = [m for m in voice_client.channel.members if not m.bot]
+        total_voters = len(voters)
+        if total_voters == 0:
+            await interaction.response.send_message(
+                embed=self.make_embed(
+                    title="No voters",
+                    description="No eligible voters in the voice channel.",
+                    color=0xe74c3c
+                ),
+                ephemeral=True
+            )
+            return
+
+        if total_voters == 1:
+            cleared_count = len(queue.queue)
+            total_duration = sum(song['duration'] for song in queue.queue)
+            queue.clear()
+            queue.playing = False
+            try:
+                voice_client.stop()
+            except Exception:
+                pass
+            embed = self.make_embed(
+                title="Queue cleared",
+                description=f"Cleared by {interaction.user.display_name}.",
+                color=0x2ecc71,
+                thumbnail=safe_avatar(interaction.user),
+                fields=[
+                    ("Songs cleared", f"```\n{cleared_count}\n```", True),
+                    ("Time removed", f"```\n{self.format_time(total_duration)}\n```", True)
+                ]
+            )
+            await interaction.response.send_message(embed=embed)
+            return
+
+        required = (total_voters // 2) + 1
+        vote_duration = 20
+
+        parent = self
+
+        class VoteView(discord.ui.View):
+            def __init__(self, voters_ids, required_count, timeout_seconds):
+                super().__init__(timeout=timeout_seconds)
+                self.voters = set(voters_ids)
+                self.yes = set()
+                self.no = set()
+                self.required = required_count
+                self.ended_early = False
+                self.result_embed = None
+
+            async def update_message_embed(self, message: discord.Message):
+                try:
+                    embed = message.embeds[0]
+                    embed.description = (
+                        f"{interaction.user.display_name} started a vote to clear the queue.\n\n"
+                        f"Members in voice channel: {total_voters}\n"
+                        f"Required votes to clear: {self.required}\n\n"
+                        f"✅ Yes: {len(self.yes)} • ❌ No: {len(self.no)}\n\n"
+                        f"Voting ends in {vote_duration} seconds."
+                    )
+                    await message.edit(embed=embed, view=self)
+                except Exception:
+                    pass
+
+            @discord.ui.button(label="✅ Yes", style=discord.ButtonStyle.success)
+            async def yes_button(self, interaction: discord.Interaction, button: discord.ui.Button):
+                uid = interaction.user.id
+                if uid not in self.voters:
+                    await interaction.response.send_message("You are not eligible to vote in this vote.", ephemeral=True)
+                    return
+                if uid in self.yes:
+                    self.yes.remove(uid)
+                    await interaction.response.send_message("Removed your ✅ vote.", ephemeral=True)
+                else:
+                    self.yes.add(uid)
+                    self.no.discard(uid)
+                    await interaction.response.send_message("Registered your ✅ vote.", ephemeral=True)
+                await self.update_message_embed(interaction.message)
+
+                if len(self.yes) >= self.required and not self.ended_early:
+                    cleared_count = len(queue.queue)
+                    total_duration = sum(song['duration'] for song in queue.queue)
+                    queue.clear()
+                    queue.playing = False
+                    try:
+                        voice_client.stop()
+                    except Exception:
+                        pass
+
+                    result_embed = parent.make_embed(
+                        title="Vote passed",
+                        description=f"Queue cleared ({len(self.yes)}/{total_voters} voted yes).",
+                        color=0x2ecc71,
+                        fields=[
+                            ("Songs cleared", f"```\n{cleared_count}\n```", True),
+                            ("Time removed", f"```\n{parent.format_time(total_duration)}\n```", True)
+                        ]
+                    )
+
+                    self.ended_early = True
+                    self.result_embed = result_embed
+
+                    for child in self.children:
+                        child.disabled = True
+                    try:
+                        await interaction.message.edit(embed=result_embed, view=self)
+                    except Exception:
+                        pass
+
+                    try:
+                        await interaction.followup.send(embed=result_embed)
+                    except Exception:
+                        pass
+
+                    self.stop()
+
+            @discord.ui.button(label="❌ No", style=discord.ButtonStyle.danger)
+            async def no_button(self, interaction: discord.Interaction, button: discord.ui.Button):
+                uid = interaction.user.id
+                if uid not in self.voters:
+                    await interaction.response.send_message("You are not eligible to vote in this vote.", ephemeral=True)
+                    return
+                if uid in self.no:
+                    self.no.remove(uid)
+                    await interaction.response.send_message("Removed your ❌ vote.", ephemeral=True)
+                else:
+                    self.no.add(uid)
+                    self.yes.discard(uid)
+                    await interaction.response.send_message("Registered your ❌ vote.", ephemeral=True)
+                await self.update_message_embed(interaction.message)
+
+        vote_embed = self.make_embed(
+            title="Vote to clear queue",
+            description=(
+                f"{interaction.user.display_name} started a vote to clear the queue.\n\n"
+                f"Members in voice channel: {total_voters}\n"
+                f"Required votes to clear: {required}\n\n"
+                f"React by clicking a button. Voting ends in {vote_duration} seconds."
+            ),
+            color=0xf1c40f,
+            thumbnail=safe_avatar(interaction.user)
+        )
+
+        view = VoteView([m.id for m in voters], required, vote_duration)
+
+        await interaction.response.send_message(embed=vote_embed, view=view)
+        vote_message = await interaction.original_response()
+
+        await view.wait()
+
+        if getattr(view, "ended_early", False):
+            return
+
+        for child in view.children:
+            child.disabled = True
+        try:
+            await vote_message.edit(view=view)
+        except Exception:
+            pass
+
+        yes_count = len(view.yes)
+        no_count = len(view.no)
+
+        yes_count = min(yes_count, total_voters)
+        no_count = min(no_count, total_voters)
+
+        if yes_count >= required:
+            cleared_count = len(queue.queue)
+            total_duration = sum(song['duration'] for song in queue.queue)
+            queue.clear()
+            queue.playing = False
+            try:
+                voice_client.stop()
+            except Exception:
+                pass
+
+            result_embed = self.make_embed(
+                title="Vote passed",
+                description=f"Queue cleared ({yes_count}/{total_voters} voted yes).",
+                color=0x2ecc71,
+                fields=[
+                    ("Songs cleared", f"```\n{cleared_count}\n```", True),
+                    ("Time removed", f"```\n{self.format_time(total_duration)}\n```", True)
+                ]
+            )
+        else:
+            result_embed = self.make_embed(
+                title="Vote failed",
+                description=f"Not enough votes to clear the queue ({yes_count}/{total_voters} voted yes).",
+                color=0x95a5a6,
+                fields=[
+                    ("Yes", f"```\n{yes_count}\n```", True),
+                    ("No", f"```\n{no_count}\n```", True),
+                    ("Required", f"```\n{required}\n```", True)
+                ]
+            )
+
+        try:
+            await vote_message.reply(embed=result_embed)
+        except Exception:
+            await interaction.followup.send(embed=result_embed)
 
     async def cog_load(self):
         self.bot.tree.add_command(self.play, guild=discord.Object(id=SYNC_SERVER))
@@ -1652,7 +1911,8 @@ class MusicCog(commands.Cog):
         self.bot.tree.add_command(self.play_chart, guild=discord.Object(id=SYNC_SERVER))
         self.bot.tree.add_command(self.pause, guild=discord.Object(id=SYNC_SERVER))
         self.bot.tree.add_command(self.timeout_user_command, guild=discord.Object(id=SYNC_SERVER))
-        
+        self.bot.tree.add_command(self.clear_queue, guild=discord.Object(id=SYNC_SERVER))
+
     async def cog_unload(self):
         for task in self.background_tasks:
             if not task.done():

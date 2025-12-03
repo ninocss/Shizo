@@ -1,5 +1,6 @@
 import discord
 from dotenv import dotenv_values
+import os
 
 #
 # Mods need the permisson to manage Threads.
@@ -10,13 +11,19 @@ from dotenv import dotenv_values
 
 SEND_TICKET_FEEDBACK = True # Set to True to send feedback to users when their ticket is closed
 
-SET_VC_STATUS_TO_MUSIC_PLAYING = False # Set to True, if the bot should change the VS status
+SET_VC_STATUS_TO_MUSIC_PLAYING = True # Set to True, if the bot should change the VC status
+
+AUTO_PLAY_ENABLED = True  # Set to True to enable autoplay feature in MusicCog (BETA)
 
 #---------------------------------------------------------------------------------------------#
 #---------------------------------------------------------------------------------------------#
 
 # Load config stuff
-_config = dotenv_values(".env")
+_config_path = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..', '.env'))
+print("Looking for .env at:", _config_path)
+print("Exists:", os.path.exists(_config_path))
+
+_config = dotenv_values(_config_path)
 TICKET_CHANNEL_ID = _config.get("TICKET_CHANNEL_ID")
 TOKEN = _config.get('DISCORD_TOKEN')
 SYNC_SERVER = _config.get('SERVER')
@@ -51,17 +58,30 @@ PURPLE = discord.ButtonStyle.blurple
 # YT_OPTS
 YT_OPTS = {
     'format': 'bestaudio/best',
+    'default_search': 'auto',
     'noplaylist': False,
     'quiet': False,
-    'include_thumbnail': True,
+    'no_warnings': False,
+    'cachedir': False,
+    'restrictfilenames': True,
     'source_address': '0.0.0.0',
+    'socket_timeout': 15,
+    'retries': 5,
+    'fragment_retries': 5,
+    'skip_unavailable_fragments': True,
+    'geo_bypass': True,
+    'include_thumbnail': True,
     'outtmpl': '-',
-    'postprocessors': [{
-        'key': 'FFmpegExtractAudio',
-        'preferredcodec': 'opus',
-        'preferredquality': '128',
-    }]
+    'prefer_ffmpeg': True,
+    'postprocessors': [
+        {
+            'key': 'FFmpegExtractAudio',
+            'preferredcodec': 'opus',
+            'preferredquality': '128',
+        },
+        {'key': 'FFmpegMetadata'},
+    ],
 }
 
 # Embed
-EMBED_FOOTER = "❤️ JabUB.css | by nino.css"
+EMBED_FOOTER = "❤️ Shizo | by nino.css"

@@ -3,10 +3,11 @@ import discord
 from jinja2 import Environment, FileSystemLoader
 import io
 import markdown
-from constants import *
+from util.constants import *
 from modals.ticketmodals import *
-from util.ticket_creator import get_ticket_creator, get_ticket_users
+from util.tickets.ticket_creator import get_ticket_creator, get_ticket_users
 from collections import Counter
+from lang.texts import *
 import re
 
 EMOJI_PATTERN = re.compile(r'<(a?):([^:]+):(\d+)>')
@@ -18,7 +19,7 @@ async def trans_ticket(interaction: discord.Interaction, summary: str, bot):
     
     if TICKET_CREATOR_ID is None:
         error_embed = discord.Embed(
-            title="❌ Fehler",
+            title=f"{ERROR}",
             description="Error, member wurde nicht gefunden.",
             color=0xff0000
         )
@@ -29,8 +30,8 @@ async def trans_ticket(interaction: discord.Interaction, summary: str, bot):
     
     if not any(role.name in [MOD, TRAIL_MOD] for role in interaction.user.roles):
         permission_embed = discord.Embed(
-            title="❌ Keine Berechtigung",
-            description="Du hast keine Berechtigung, um diese Aktion auszuführen.",
+            title=f"{NO_PERMISSION_TITLE}",
+            description=f"{NO_PERMISSION}",
             color=0xff0000
         )
         await interaction.response.send_message(embed=permission_embed, ephemeral=True, delete_after=10)
@@ -97,11 +98,11 @@ async def trans_ticket(interaction: discord.Interaction, summary: str, bot):
 
     env = Environment(loader=FileSystemLoader('.'))
     try:
-        template = env.get_template('src/transcript_template.html')
+        template = env.get_template('src/util/transcript_template.html')
     except FileNotFoundError:
         file_error_embed = discord.Embed(
-            title="❌ Datei nicht gefunden",
-            description="Die Datei 'transcript_template.html' wurde nicht gefunden.",
+            title=f"{ERROR}",
+            description=f"Die Datei 'transcript_template.html' wurde nicht gefunden.",
             color=0xff0000
         )
         await interaction.edit_original_response(embed=file_error_embed)

@@ -1,6 +1,6 @@
 # ruff: noqa: F403 F405
 import discord
-from constants import *
+from util.constants import *
 from views.ticketviews import *
 from modals.ticketmodals import *
 import os

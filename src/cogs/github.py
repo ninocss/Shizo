@@ -2,11 +2,11 @@
 import discord
 from discord.ext import commands
 from discord import app_commands
-from constants import *
+from util.constants import *
 from views.ticketviews import *
 from modals.ticketmodals import *
-from util.ticket_creator import *
-from texts import *
+from util.tickets.ticket_creator import *
+from lang.texts import *
 
 class GithubCog(commands.Cog):
     def __init__(self, bot):
@@ -19,9 +19,9 @@ class GithubCog(commands.Cog):
             title="GitHub Repository",
             description=(
                 "Here you can find the source code, report issues, and contribute to the bot!\n\n"
-                "[View Repository](https://github.com/ninocss/JabUB)\n"
-                "[Report an Issue](https://github.com/ninocss/JabUB/issues)\n"
-                "[Contribute](https://github.com/ninocss/JabUB/pulls)\n"
+                "[View Repository](https://github.com/ninocss/Shizo)\n"
+                "[Report an Issue](https://github.com/ninocss/Shizo/issues)\n"
+                "[Contribute](https://github.com/ninocss/Shizo/pulls)\n"
             ),
             color=0x00ff00
         )
@@ -34,7 +34,7 @@ class GithubCog(commands.Cog):
         
         embed.add_field(
             name="Latest Release",
-            value="[Releases](https://github.com/ninocss/JabUB/releases)",
+            value="[Releases](https://github.com/ninocss/Shizo/releases)",
             inline=True
         )
         embed.add_field(

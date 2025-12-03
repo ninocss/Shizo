@@ -1,10 +1,10 @@
 # ruff: noqa: F403 F405
 from discord.ext import commands
-from constants import *
+from util.constants import *
 from discord import *
 from discord.ui import View, Button
 
-from util.ascii_arts import get_ascii_art
+from util.games.ascii_arts import get_ascii_art
 
 class ArtCog(commands.Cog):
     def __init__(self, bot):

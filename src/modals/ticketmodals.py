@@ -1,10 +1,10 @@
 # ruff: noqa: F403 F405
 import discord
 from discord.ui import Modal, TextInput
-from constants import *
-from util.transcript import *
+from util.constants import *
+from util.tickets.transcript import *
 from typing import TYPE_CHECKING
-from texts import *
+from lang.texts import *
 
 if TYPE_CHECKING:
     from cogs.tickets import TicketCog

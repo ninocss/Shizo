@@ -2,15 +2,15 @@
 import discord
 from discord.ext import commands
 from discord import app_commands
-from constants import *
+from util.constants import *
 from views.ticketviews import *
 from modals.ticketmodals import *
-from util.ticket_creator import *
+from util.tickets.ticket_creator import *
 import traceback
-from texts import *
+from lang.texts import *
 import logging
 import colorlog
-from embeds import simple_embed
+from modals.embeds import simple_embed
 
 if TYPE_CHECKING:
     from cogs.tickets import TicketCog
@@ -70,7 +70,7 @@ class TicketCog(commands.Cog):
             color=0x5865F2
         )
         embed.set_author(
-            name="JabUB", 
+            name=f"{BOT_NAME}", 
             icon_url=interaction.client.user.avatar.url if interaction.client.user.avatar else None
         )
 
@@ -90,29 +90,36 @@ class TicketCog(commands.Cog):
         await interaction.channel.send(embed=embed, view=TicketSetupView(self))
         logger.info(f"Ticket setup embed sent by {interaction.user} in channel {interaction.channel}.")
 
-    @app_commands.command(name="close", description="Lets you close the ticket")
-    async def close(self, interaction: discord.Interaction):
-        logger.info(f"Close command invoked by {interaction.user} in channel {interaction.channel}.")
-        if not isinstance(interaction.channel, discord.Thread):
+    @commands.Cog.listener()
+    async def on_message(self, message: discord.Message):
+        if message.author.bot:
+            return
+        if not message.author.guild_permissions.kick_members:
+            return
+        if not message.content.lower().startswith("?close") and not message.content.lower().startswith("?c"):
+            return
+
+        if not isinstance(message.channel, discord.Thread):
             logger.warning("Close command used outside of a thread.")
             embed = simple_embed(CAN_ONLY_BE_USED_IN_THREAD, color=0xff0000)
-            await interaction.response.send_message(embed=embed, ephemeral=True)
+            await message.channel.send(embed=embed, ephemeral=True)
             return
-
-        if interaction.channel.parent_id != int(TICKET_CHANNEL_ID):
+        
+        if message.channel.parent_id != int(TICKET_CHANNEL_ID):
             logger.warning("Close command used in a thread not under the ticket channel.")
             embed = simple_embed(CAN_ONLY_BE_USED_IN_THREAD, color=0xff0000)
-            await interaction.response.send_message(embed=embed, ephemeral=True)
+            await message.channel.send(embed=embed, ephemeral=True)
             return
-
+        
         cancel_btn = Button(emoji=UNCHECK, label=CANCEL_BUTTON_LABEL, style=SECONDARY)
         cancel_btn.callback = self.cancel_btn_callback
 
         view = PersistentCloseView(ticketcog=self, bot=self.bot)
         view.add_item(cancel_btn)
+        
+        ticket_creator = get_ticket_creator(message.channel.id)
 
-        await interaction.response.send_message(view=view, content="")
-        logger.info(f"Close view sent in thread {interaction.channel} by {interaction.user}.")
+        await message.channel.send(view=view, content=f"{TICKET_CLOSE_PROMPT}".format(ticket_creator=ticket_creator))
 
     async def cancel_btn_callback(self, interaction):
         logger.info(f"Cancel button clicked by {interaction.user} in message {interaction.message.id}.")
@@ -147,11 +154,11 @@ class TicketCog(commands.Cog):
 
             embed = discord.Embed(
                 title=f"{TICKET_OVERVIEW_TITLE}",
-                description=f"ℹ️ {CLOSE_EMBED_DESC}",
+                description=f"{CLOSE_EMBED_DESC}",
                 color=0x00D166
             )
             embed.set_footer(
-                text=f"❤️ {EMBED_FOOTER}",
+                text=f"{EMBED_FOOTER}",
                 icon_url=interaction.guild.icon.url if interaction.guild.icon else None
             )
             embed.set_author(
@@ -201,87 +208,26 @@ class TicketCog(commands.Cog):
             embed = simple_embed(CAN_ONLY_BE_USED_IN_THREAD, color=0xff0000)
             await interaction.response.send_message(embed=embed, ephemeral=True)
             return
-
         if interaction.channel.parent_id != int(TICKET_CHANNEL_ID):
             logger.warning("Menu command used in a thread not under the ticket channel.")
             embed = simple_embed(CAN_ONLY_BE_USED_IN_THREAD, color=0xff0000)
             await interaction.response.send_message(embed=embed, ephemeral=True)
             return
-        
         user = interaction.user
         if not user.guild_permissions.kick_members:
-            embed = simple_embed("You don't have permission to access the management menu.", color=0xff0000)
+            embed = simple_embed(f"{NO_PERMISSION}", color=0xff0000)
             await interaction.response.send_message(embed=embed, ephemeral=True)
             return
+        logger.info(f"Management menu selected by {interaction.user} in thread {interaction.channel}.")
         
-        public_btn = Button(emoji="🧑", label="User menu", style=discord.ButtonStyle.primary)
-        private_btn = Button(emoji="⚒️", label="Management menu", style=SECONDARY)
+        embed = discord.Embed(
+            title="⚒️ Management Menu",
+            description="sigma",
+            color=0x5865F2
+        )
         
-        async def public_menu_callback(button_interaction: discord.Interaction):
-            async def cancel_callback(button_interaction: discord.Interaction):
-                await button_interaction.message.delete()
-            
-            view = PersistentCloseView(ticketcog=self, bot=self.bot)
-            cancel_btn = Button(emoji="❌", label="Abbrechen", style=SECONDARY)
-            cancel_btn.callback = cancel_callback
-            
-            view.add_item(cancel_btn)
-            channel = button_interaction.channel
-            embed = discord.Embed(
-                title=f"{LOCK_EMOJI} Ticket schließen",
-                description="Verwende die Buttons unten, um das Ticket zu verwalten:",
-                color=0x5865F2
-            )
-            embed.add_field(
-                name=f"{LOCK_EMOJI} Close",
-                value="Schließe das Ticket",
-                inline=False
-            )
-            embed.add_field(
-                name="📝 Close with Reason",
-                value="Schließe das Ticket mit einem Grund",
-                inline=False
-            )
-            await channel.send(embed=embed, view=view)
+        await interaction.response.send_message(embed=embed, view=TicketModMenu(ticketcog=self, bot=self.bot), ephemeral=True, delete_after=60)
         
-        async def private_menu_callback(button_interaction):
-            logger.info(f"Management menu selected by {button_interaction.user} in thread {button_interaction.channel}.")
-            embed = discord.Embed(
-                title="⚒️ Management Menu",
-                description="Verwende die Buttons unten, um das Ticket zu verwalten:",
-                color=0x5865F2
-            )
-            embed.add_field(
-                name=f"{LOCK_EMOJI} Close",
-                value="Benutze den Close Button um das Ticket zu schließen",
-                inline=False
-            )
-            embed.add_field(
-                name="🔐 Lock",
-                value="Benutze den Lock Button um es zu sperren (nur Mods können schreiben)",
-                inline=False
-            )
-            embed.add_field(
-                name="✏️ Rename",
-                value="Benutze den Rename Button um es zu renamen",
-                inline=False
-            )
-            embed.add_field(
-                name="📄 Transcript",
-                value="Benutze den Transcript Button um ein Transkript zu erstellen",
-                inline=False
-            )
-            
-            await button_interaction.response.send_message(embed=embed, view=TicketModMenu(ticketcog=self, bot=self.bot), ephemeral=True, delete_after=60)
-        
-        public_btn.callback = public_menu_callback
-        private_btn.callback = private_menu_callback
-        
-        menu_selection_view = discord.ui.View()
-        menu_selection_view.add_item(public_btn)
-        menu_selection_view.add_item(private_btn)
-        
-        await interaction.response.send_message(embed=simple_embed(f"Management Menu"), view=menu_selection_view, ephemeral=True, delete_after=60)
         logger.info(f"Ticket menu selection sent to {interaction.user} in thread {interaction.channel}.")
 
     @commands.Cog.listener(name="THREAD_UPDATE")
@@ -303,6 +249,5 @@ class TicketCog(commands.Cog):
 
     async def cog_load(self):
         self.bot.tree.add_command(self.setup, guild=discord.Object(id=SYNC_SERVER))
-        self.bot.tree.add_command(self.close, guild=discord.Object(id=SYNC_SERVER))
         self.bot.tree.add_command(self.menu, guild=discord.Object(id=SYNC_SERVER))
         logger.info("TicketCog commands loaded to bot tree.")

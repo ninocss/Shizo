@@ -7,7 +7,7 @@ import discord
 from discord import Intents
 from discord.ext import commands
 
-from constants import *
+from util.constants import *
 from views.ticketviews import *
 from cogs.tickets import TicketCog
 from cogs.github import GithubCog
@@ -61,11 +61,11 @@ class Bot(commands.Bot):
         cogs = [
             TicketCog(self),
             GithubCog(self),
-            MusicCog(self),
-            RadioCog(self),
+            #MusicCog(self),
+            #RadioCog(self),
             CountingCog(self),
             GuessNumberCog(self),
-            ArtCog(self)
+            #ArtCog(self)
         ]
         
         for cog in cogs:
@@ -93,12 +93,6 @@ class Bot(commands.Bot):
         logger.info(f"🎯 Guild: {SYNC_SERVER}")
             
     async def on_ready(self):
-        logger.info("""
-                   へ   JabUB   ╱|、
-                ૮ - ՛)         (` - 7
-                /  ⁻ |         |、⁻ 〵
-            乀 (ˍ,ل ل          じしˍ, )ノ
-        """)
         logger.info(f"Logged in as {self.user} (ID: {self.user.id})")
         logger.info(f"---------------------------------------------------")
         
@@ -116,3 +110,5 @@ async def main():
     
 if __name__ == "__main__":
     asyncio.run(main())
+
+
