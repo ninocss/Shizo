@@ -1,4 +1,4 @@
-# JabUB Discord Bot
+# Shizo Discord Bot
 
 A feature-rich Discord bot built with Python and discord.py, offering music playback, ticket system, GitHub integration, and entertainment features.
 
@@ -43,8 +43,8 @@ A feature-rich Discord bot built with Python and discord.py, offering music play
 
 1. **Clone the repository**
 ```bash
-git clone https://github.com/ninocss/JabUB/
-cd JabUB
+git clone https://github.com/ninocss/Shizo/
+cd Shizo
 ```
 
 2. **Install dependencies**
