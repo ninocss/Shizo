@@ -1,222 +1,374 @@
 # Shizo Discord Bot
+A feature‑rich Discord bot built with Python and `discord.py`, offering:
 
-A feature-rich Discord bot built with Python and discord.py, offering music playback, ticket system, GitHub integration, and entertainment features.
+- 🎵 Advanced music system (YouTube + radio)
+- 🎫 Ticket system with threads, transcripts, and mod tools
+- 🔧 GitHub integration
+- 🎮 Fun mini‑games and utilities
+
+---
 
 ## Features
 
 ### 🎵 Music System
-- Play music from YouTube URLs or search terms
-- Queue management with shuffle functionality
-- Skip songs and view current queue
-- Support for playlists
-- High-quality audio streaming with FFmpeg
 
-### 🎫 Ticket System
-- Create private support tickets
-- Automated ticket management
-- Role-based access control
-- Ticket closing with reason logging
-- Auto-archive after timeout
+- Play songs from YouTube URLs or search terms
+- Queue management (add, view, shuffle, clear, auto‑play)
+- YouTube Music “chart” / trending integration
+- Random “Inspire Me” song picker with rich now‑playing embeds
+- Per‑guild music queues with duration formatting
+- Uses `yt-dlp` + FFmpeg with tuned options in `util.constants.YT_OPTS`
 
-### 🔧 GitHub Integration
-- GitHub repository interactions
-- Webhook support for repository events
-- Issue and pull request notifications
+Main implementation: `cogs.music.MusicCog`
+
+Core helpers:
+
+- `MusicCog.make_embed`
+- `MusicCog.play_next`
+- `MusicCog.create_now_playing_embed`
+- `MusicCog.update_progress`
+- `util.music.queue`
 
 ### 📻 Radio
-- Internet radio streaming capabilities
-- Multiple radio station support
 
-### 🎮 Entertainment
-- Counting game
-- Guess the number game
-- Interactive games with leaderboards
+- Play internet radio streams from URLs or pre‑defined stations
+- Support for `.m3u`, `.pls`, `.asx`, `.xspf` playlist formats
+- Rich “Radio Stream Started” embed with listener count
+
+Core implementation: `cogs.radio.RadioCog`, especially:
+
+- `RadioCog._parse_playlist_file`
+- `RadioCog._create_radio_embed`
+
+### 🎫 Ticket System
+
+- Slash command `/tickets` for server‑wide ticket setup
+- Category selection via dropdown (Discord, Minecraft, Bereich sichern, Parzelle, Entbannung, Sonstiges)
+- Ticket creation in private threads with dynamic fields and emojis
+- Close / delete / archive / reopen flows
+- Full HTML transcripts with multiple themes (Dark, Teal, Lyntr, Hackerman, Text)
+- Stores ticket <-> user relations in JSON
+
+Main components:
+
+- Cog: `cogs.tickets.TicketCog`
+- Views / UI: `views.ticketviews.ActionsView`, `views.ticketviews.TicketSetupView`, `views.ticketviews.TicketDropdown`
+- Modals: `modals.ticketmodals`
+  - `TransDesc` (transcript description)
+  - `bereichModal` (area saving)
+  - `parzelleModal` (plot transfer)
+- Ticket utilities:  
+  - `util.tickets.ticket_creator` (JSON storage)
+  - `util.tickets.transcript.trans_ticket` (HTML export)
+  - Template: `util/transcript_template.html`
+
+All user‑facing texts are centralized in `lang.texts.TEXTS` for easy localization.
+
+### 🔧 GitHub Integration
+
+Slash command `/github`:
+
+- Shows repository links, releases, and a call to star the repo
+- Uses `EMBED_FOOTER` and shared styles from `util.constants`
+
+Implementation: `cogs.github.GithubCog`
+
+### 🎮 Games & Fun
+
+- **ASCII Art**: `/art` command returns random ASCII art from `util.games.ascii_arts` via `cogs.art.ArtCog`
+- **Counting Game**: `cogs.counting.CountingCog` manages a counting channel with chance to fail using `counting.random_fail_message`
+- **Guess the Number**: `cogs.guess_the_number.GuessNumberCog` with temperature emojis via `GuessNumberCog.get_temperature_emoji`
+
+---
+
+## Tech Stack
+
+- **Language:** Python 3.9+
+- **Discord Library:** `discord.py`
+- **YouTube / Audio:** `yt-dlp` + FFmpeg
+- **Env & Config:** .env + `util.constants`
+- **Templating:** `jinja2` + HTML (transcripts)
+- **Logging:** `logging` + `colorlog`
+
+See requirements.txt for full dependency list.
+
+---
+
+## File Structure
+
+```bash
+.
+├── .env                       # Environment variables (not committed)
+├── README.md                  # Project documentation
+├── requirements.txt           # Python dependencies
+├── config/
+│   └── tickets.json           # Persistent ticket data
+└── src/
+    ├── main.py                # Bot entry point
+    ├── cogs/
+    │   ├── art.py             # /art ASCII art command
+    │   ├── counting.py        # Counting game
+    │   ├── github.py          # /github command
+    │   ├── guess_the_number.py# Guess the number game
+    │   ├── music.py           # Music system (queues, charts, history)
+    │   ├── radio.py           # Internet radio player
+    │   └── tickets.py         # Ticket system core
+    ├── lang/
+    │   └── texts.py           # Localized text constants
+    ├── modals/
+    │   ├── embeds.py          # Simple embed helper
+    │   └── ticketmodals.py    # Ticket & transcript modals
+    ├── util/
+    │   ├── constants.py       # Config, emojis, YT_OPTS, etc.
+    │   ├── transcript_template.html # HTML transcript theme
+    │   ├── games/
+    │   │   └── ascii_arts.py  # ASCII art collection + getter
+    │   ├── music/
+    │   │   └── queue.py       # Music queue abstraction
+    │   └── tickets/
+    │       ├── ticket_creator.py # Ticket storage helpers
+    │       └── transcript.py  # Transcript generator
+    └── views/
+        └── ticketviews.py     # Ticket and music UI Views
+```
+
+---
 
 ## Installation
 
 ### Prerequisites
-- Python 3.8 or higher
-- FFmpeg (for audio processing)
-- A Discord bot token
 
-### Setup
+- Python $3.8$ or higher
+- FFmpeg installed and available in `$PATH$
+- A Discord bot application and token
 
-1. **Clone the repository**
+### 1. Clone the Repository
+
 ```bash
-git clone https://github.com/ninocss/Shizo/
+git clone https://github.com/ninocss/Shizo.git
 cd Shizo
 ```
 
-2. **Install dependencies**
+### 2. Install Dependencies
+
 ```bash
 pip install -r requirements.txt
 ```
 
-3. **Install FFmpeg**
-   - **Windows**: Download from [FFmpeg official site](https://ffmpeg.org/download.html)
-   - **macOS**: `brew install ffmpeg`
-   - **Linux**: `sudo apt install ffmpeg` (Ubuntu/Debian) or `sudo yum install ffmpeg` (CentOS/RHEL)
+### 3. Create `.env`
 
-4. **Configure the bot**
-   - Create a `constants.py` file with your configuration:
-```python
-# YouTube-DL Options
-YT_OPTS = {
-    'format': 'bestaudio/best',
-    'extractaudio': True,
-    'audioformat': 'mp3',
-    'outtmpl': '%(extractor)s-%(id)s-%(title)s.%(ext)s',
-    'restrictfilenames': True,
-    'noplaylist': False,
-    'nocheckcertificate': True,
-    'ignoreerrors': False,
-    'logtostderr': False,
-    'quiet': True,
-    'no_warnings': True,
-    'default_search': 'auto',
-    'source_address': '0.0.0.0'
-}
+Create a `.env` file in the project root (same folder as `src/`):
 
-# Emojis
-LOADING_EMOJI = "⏳"
-INFO_EMOJI = "ℹ️"
-CHECK = "✅"
-UNCHECK = "❌"
+```env
+# The Bot token
+DISCORD_TOKEN=your_bot_token_here
+
+# Guild ID where slash commands are synced
+SERVER=your_server_id_here
+
+# Music interaction channel (e.g. #music)
+I_CHANNEL=your_music_channel_id_here
+
+# Transcript log channel
+TRANS_CHANNEL=your_transcript_channel_id_here
+
+# Role names
+MOD=Mod
+TRAIL_MOD=Trail_mod
+
+# Ticket creation channel ID
+TICKET_CHANNEL_ID=your_ticket_channel_id_here
+
+# Optional: role IDs, additional config...
+TEAM_ROLE=Support
 ```
-   - Create a `.env` file with this config:
 
-   ```env
-   # Channels are always the channel ID. Role Names just as the name of the role, everything without ""
+The `.env` is loaded by [`util.constants`](src/util/constants.py).
 
-   # The Bot token
-   DISCORD_TOKEN=your_bot_token_here
+### 4. Run the Bot
 
-   # The Server, the bot will sync its commands to
-   SERVER=your_server_id_here
+From the project root:
 
-   # The interaction channel for music (#music or #musik)
-   I_CHANNEL=your_music_channel_id_here
-
-   # The transcript channel
-   TRANS_CHANNEL=your_transcript_channel_id_here
-
-   # Mod role name
-   MOD=Mod
-
-   # Trail mod role name
-   TRAIL_MOD=Trail_mod
-
-   # The channel where you can create tickets
-   TICKET_CHANNEL_ID=your_ticket_channel_id_here
-   ```
-
-5. **Run the bot**
 ```bash
-python src/main.py
+python -m src.main
 ```
 
-## Commands
+Or:
 
-### Music Commands
-- `/play <song>` - Play music from YouTube URL or search term
-- `/skip` - Skip the current song
-- `/queue` - Display the current queue
-- `/shuffle` - Shuffle the queue
-- `/stop` - Stop music and disconnect from voice channel
-
-### Ticket Commands
-- `/tickets` - Set up the ticket system (Admin only)
-- `/close` - Close a ticket (use in ticket threads)
-- `/menu` - Gives mods a useful management menu (Mods only)
-
-### Other Commands
-- `/github` - GitHub-related commands
-- Various entertainment commands for games
-
-## Configuration
-
-### Required Permissions
-The bot needs the following permissions in your Discord server:
-- Read Messages
-- Send Messages
-- Connect to Voice Channels
-- Speak in Voice Channels
-- Manage Threads
-- Create Private Threads
-- Embed Links
-- Attach Files
-- Use Slash Commands
-
-## File Structure
 ```bash
-src/
-├── main.py                 # Main bot file
-├── constants.py            # Configuration constants
-├── .env                    # Your .env
-├── cogs/
-│   ├── art.py              # Just the file with ASCII art
-│   ├── music.py            # Music functionality
-│   ├── tickets.py          # Ticket system
-│   ├── github.py           # GitHub integration
-│   ├── radio.py            # Radio features
-│   ├── counting.py         # Counting game
-│   └── guess_the_number.py # Number guessing game
-├── views/
-│   └── ticketviews.py      # Ticket UI components
-├── modals/
-│   └── ticketmodals.py     # Ticket forms
-├── util/
-│   ├── ascii_arts.py       # Helping with arts
-│   ├── queue.py            # Music queue management
-│   ├── play_next.py        # Music playback logic
-│   └── ticket_creator.py   # Ticket creation utilities
-├── embeds.py               # Discord embed templates
-└── texts.py                # Text constants
+python main.py
 ```
 
-## Dependencies
-- `discord.py` - Discord API wrapper
-- `yt-dlp` - YouTube downloader
-- `colorlog` - Colored logging
-- `asyncio` - Asynchronous programming
-- `concurrent.futures` - Thread pool execution
-
-## Troubleshooting
-
-### Common Issues
-
-**Bot not responding to commands:**
-- Check if the bot has proper permissions
-- Verify the bot token is correct
-- Ensure slash commands are synced
-
-**Music not playing:**
-- Verify FFmpeg is installed and in PATH
-- Check if the bot has voice channel permissions
-- Ensure you're in the same voice channel as the bot
-
-**Tickets not working:**
-- Verify channel IDs in `constants.py`
-- Check if required roles exist
-- Ensure the bot has thread management permissions
-
-### Logging
-The bot uses colored logging for better debugging. Check the console output for detailed information about bot operations and any errors.
-
-## Support
-
-For support and questions:
-- Create an issue in the GitHub repository
-- Check the documentation in the code comments
-
-## Credits
-
-Created by nino
-- Website: www.ninoio.gay / www.ninoio.xyz
-- Bot Framework: discord.py
-- Music: yt-dlp
-- Audio Processing: FFmpeg
+On first run, Discord may take a short time to register slash commands.
 
 ---
 
-**Note**: Make sure to keep your bot token secure and never share it publicly. Add `.env` and `constants.py` to your `.gitignore` file to prevent accidental commits of sensitive information.
+## Configuration
+
+Many core options live in [`util.constants`](src/util/constants.py):
+
+- Ticket file path: `TICKET_CREATOR_FILE = "config/tickets.json"`
+- Emojis: `CHECK`, `UNCHECK`, `LOCK_EMOJI`, `TRANSCRIPT_EMOJI`, etc.
+- YT‑DLP options: [`YT_OPTS`](src/util/constants.py)
+- Embed footer: `EMBED_FOOTER = "❤️ Shizo | by nino.css"`
+- Feature toggles:
+  - `SEND_TICKET_FEEDBACK`
+  - `SET_VC_STATUS_TO_MUSIC_PLAYING`
+  - `AUTO_PLAY_ENABLED`
+
+Texts for tickets and UI are in [`lang.texts.TEXTS`](src/lang/texts.py). Edit there to change languages or phrasing.
+
+---
+
+## Commands (Overview)
+
+### Music
+
+Implemented in [`cogs.music.MusicCog`](src/cogs/music.py):
+
+- `/play <query>` – play from URL or search term
+- `/queue` – show current queue
+- `/shuffle` – shuffle queue with summary
+- `/clearqueue` – vote to clear the queue
+- `/stop` – stop music and disconnect
+- `/chart` – play random song from YouTube Music charts
+- “Inspire Me”, “Most Played”, “Charts”, “History” buttons via [`ActionsView`](src/views/ticketviews.py)
+
+### Tickets
+
+Implemented in [`cogs.tickets.TicketCog`](src/cogs/tickets.py):
+
+- `/tickets` – send ticket setup embed (Admin only)
+- `/close` – close a ticket thread
+- `/menu` – mod management menu (buttons)
+- Transcript modal via [`TransDesc`](src/modals/ticketmodals.py)
+
+### Misc
+
+- `/github` – info about the GitHub repo ([`GithubCog`](src/cogs/github.py))
+- `/art` – random ASCII art ([`ArtCog`](src/cogs/art.py))
+- Counting & number guessing commands in:
+  - [`CountingCog`](src/cogs/counting.py)
+  - [`GuessNumberCog`](src/cogs/guess_the_number.py)
+
+---
+
+## Logging & Debugging
+
+Logging is configured in [`main.setup_logging`](src/main.py) using `colorlog`:
+
+- Logs command registration, guild sync, and errors
+- Ticket system has extra logging in [`cogs.tickets`](src/cogs/tickets.py)
+
+If **slash commands don’t appear**:
+
+1. Verify `DISCORD_TOKEN` and `SERVER` in `.env`
+2. Check bot has `applications.commands` scope
+3. Look at console output for sync logs from [`Bot.setup_hook`](src/main.py)
+
+---
+
+## Security
+
+- Do **not** commit `.env` or any file containing your bot token.
+- Make sure `.env` is in `.gitignore`.
+- Limit bot permissions to what’s needed (manage threads, read/send messages, connect/speak, embed links, attach files, use slash commands).
+
+---
+
+## Credits
+
+Created by **nino**
+
+- Bot framework: `discord.py`
+- Music: `yt-dlp`
+- Audio: FFmpeg
+- Transcripts: custom HTML in [`util/transcript_template.html`](src/util/transcript_template.html)
+
+If you like the bot, consider starring the repository and sharing feedback via the `/github` command.On first run, Discord may take a short time to register slash commands.
+
+---
+
+## Configuration
+
+Many core options live in [`util.constants`](src/util/constants.py):
+
+- Ticket file path: `TICKET_CREATOR_FILE = "config/tickets.json"`
+- Emojis: `CHECK`, `UNCHECK`, `LOCK_EMOJI`, `TRANSCRIPT_EMOJI`, etc.
+- YT‑DLP options: [`YT_OPTS`](src/util/constants.py)
+- Embed footer: `EMBED_FOOTER = "❤️ Shizo | by nino.css"`
+- Feature toggles:
+  - `SEND_TICKET_FEEDBACK`
+  - `SET_VC_STATUS_TO_MUSIC_PLAYING`
+  - `AUTO_PLAY_ENABLED`
+
+Texts for tickets and UI are in [`lang.texts.TEXTS`](src/lang/texts.py). Edit there to change languages or phrasing.
+
+---
+
+## Commands (Overview)
+
+### Music
+
+Implemented in [`cogs.music.MusicCog`](src/cogs/music.py):
+
+- `/play <query>` – play from URL or search term
+- `/queue` – show current queue
+- `/shuffle` – shuffle queue with summary
+- `/clearqueue` – vote to clear the queue
+- `/stop` – stop music and disconnect
+- `/chart` – play random song from YouTube Music charts
+- “Inspire Me”, “Most Played”, “Charts”, “History” buttons via [`ActionsView`](src/views/ticketviews.py)
+
+### Tickets
+
+Implemented in [`cogs.tickets.TicketCog`](src/cogs/tickets.py):
+
+- `/tickets` – send ticket setup embed (Admin only)
+- `/close` – close a ticket thread
+- `/menu` – mod management menu (buttons)
+- Transcript modal via [`TransDesc`](src/modals/ticketmodals.py)
+
+### Misc
+
+- `/github` – info about the GitHub repo ([`GithubCog`](src/cogs/github.py))
+- `/art` – random ASCII art ([`ArtCog`](src/cogs/art.py))
+- Counting & number guessing commands in:
+  - [`CountingCog`](src/cogs/counting.py)
+  - [`GuessNumberCog`](src/cogs/guess_the_number.py)
+
+---
+
+## Logging & Debugging
+
+Logging is configured in [`main.setup_logging`](src/main.py) using `colorlog`:
+
+- Logs command registration, guild sync, and errors
+- Ticket system has extra logging in [`cogs.tickets`](src/cogs/tickets.py)
+
+If **slash commands don’t appear**:
+
+1. Verify `DISCORD_TOKEN` and `SERVER` in `.env`
+2. Check bot has `applications.commands` scope
+3. Look at console output for sync logs from [`Bot.setup_hook`](src/main.py)
+
+---
+
+## Security
+
+- Do **not** commit `.env` or any file containing your bot token.
+- Make sure `.env` is in `.gitignore`.
+- Limit bot permissions to what’s needed (manage threads, read/send messages, connect/speak, embed links, attach files, use slash commands).
+
+---
+
+## Credits
+
+Created by **nino**
+
+- Bot framework: `discord.py`
+- Music: `yt-dlp`
+- Audio: FFmpeg
+- Transcripts: custom HTML in [`util/transcript_template.html`](src/util/transcript_template.html)
+
+If you like the bot, consider starring the repository and sharing feedback via the `/github` command.
