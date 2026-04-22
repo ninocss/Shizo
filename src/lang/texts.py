@@ -23,7 +23,7 @@ TEXTS = {
     "TICKET_OVERVIEW_TITLE": "🎫 Ticket Übersicht",
     
     # Embed Footer
-    "EMBED_FOOTER": "Ticket System",
+    "EMBED_FOOTER": "Ticket System | by nino161er",
     
     # Ticket Messages
     "TICKET_CREATION_SUCCESS": "Ticket erstellt in {thread}!",

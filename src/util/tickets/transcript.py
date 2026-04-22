@@ -27,6 +27,11 @@ async def trans_ticket(interaction: discord.Interaction, summary: str, bot):
         return
 
     TICKET_CREATOR = guild.get_member(TICKET_CREATOR_ID)
+    if TICKET_CREATOR is None:
+        try:
+            TICKET_CREATOR = await guild.fetch_member(TICKET_CREATOR_ID)
+        except Exception:
+            logger.warning(f"Ticket creator not found in guild for ID {TICKET_CREATOR_ID}")
     
     if not any(role.name in [MOD, TRAIL_MOD] for role in interaction.user.roles):
         permission_embed = discord.Embed(

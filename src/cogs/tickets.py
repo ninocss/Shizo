@@ -67,25 +67,19 @@ class TicketCog(commands.Cog):
         embed = discord.Embed(
             title=f"{SUPPORT_HEADER_TEXT}",
             description=f"📋 {TICKET_CREATION_EMBED_TEXT}",
-            color=0x5865F2
+            color=0x00ff00
         )
         embed.set_author(
             name=f"{BOT_NAME}", 
             icon_url=interaction.client.user.avatar.url if interaction.client.user.avatar else None
         )
-
-        embed.add_field(
-            name=f"{WHAT_NEXT}", 
-            value=f"{WHAT_NEXT_VALUE}", 
-            inline=False
-        )
+        
         embed.set_footer(
             text=f"{EMBED_FOOTER}",
             icon_url=interaction.guild.icon.url if interaction.guild.icon else None
         )
 
         embed.set_thumbnail(url=interaction.guild.icon.url if interaction.guild.icon else None)
-        embed.timestamp = discord.utils.utcnow()
         
         await interaction.channel.send(embed=embed, view=TicketSetupView(self))
         logger.info(f"Ticket setup embed sent by {interaction.user} in channel {interaction.channel}.")
@@ -152,10 +146,11 @@ class TicketCog(commands.Cog):
             await thread.add_user(interaction.user)
             await thread.edit(invitable=False)
 
+            embed_color = fields.get("color", 0x00D166)
             embed = discord.Embed(
                 title=f"{TICKET_OVERVIEW_TITLE}",
                 description=f"{CLOSE_EMBED_DESC}",
-                color=0x00D166
+                color=embed_color
             )
             embed.set_footer(
                 text=f"{EMBED_FOOTER}",
@@ -165,20 +160,36 @@ class TicketCog(commands.Cog):
                 name=f"{interaction.user.name}", 
                 icon_url=interaction.user.avatar.url if interaction.user.avatar else None
             )
+            # set a category thumbnail if available in the ticket image map
+            try:
+                img_url = TICKET_IMAGE_MAP.get(title)
+            except Exception:
+                img_url = None
+
+            if img_url:
+                embed.set_image(url=img_url)
 
             for name, value in fields.items():
-                if name not in ["Title", "Rolle", "message"] and value.strip():
-                    emoji = "📝"
-                    if "email" in name.lower():
-                        emoji = "📧"
-                    elif "problem" in name.lower() or "issue" in name.lower():
-                        emoji = "❗"
-                    elif "description" in name.lower():
-                        emoji = "📋"
-                    elif "priority" in name.lower():
-                        emoji = "🚨"
-                    
-                    embed.add_field(name=f"{emoji} {name}", value=f"```{value}```", inline=False)
+                if name in ["Title", "Rolle", "message", "color"]:
+                    continue
+
+                if not isinstance(value, str):
+                    continue
+
+                if not value.strip():
+                    continue
+
+                emoji = "📝"
+                if "email" in name.lower():
+                    emoji = "📧"
+                elif "problem" in name.lower() or "issue" in name.lower():
+                    emoji = "❗"
+                elif "description" in name.lower():
+                    emoji = "📋"
+                elif "priority" in name.lower():
+                    emoji = "🚨"
+
+                embed.add_field(name=f"{emoji} {name}", value=f"```{value}```", inline=False)
 
             message = fields.get("message", DEFAULT_HELP_MESSAGE)
             
@@ -187,15 +198,89 @@ class TicketCog(commands.Cog):
                 view=PersistentCloseView(bot=self.bot, ticketcog=self),
                 content=f"{support_role.mention if support_role else ''} {supporthilfe_role.mention if supporthilfe_role else ''} {message}"
             )
+            try:
+                if title == "Kreativ-Server":
+                    setup_desc = (
+                        "Du hast ein Anliegen zu unserem Kreativ-Server?\n\n"
+                        "Worum geht es?\n"
+                        "- Wähle eine Option aus dem Drop-Down Menü aus!"
+                    )
+                    setup_embed = discord.Embed(title="MC Server: Kreativ-Server", description=setup_desc, color=embed_color)
+                    await thread.send(embed=setup_embed, view=MCServerSetupView(ticketcog=self, server_type="kreativ"))
+                elif title == "Survival (normal)":
+                    setup_desc = (
+                        "Du hast ein Anliegen zu unserem normal Freebuild Survival-Server?\n\n"
+                        "Worum geht es?\n"
+                        "- Wähle eine Option aus dem Drop-Down Menü aus!"
+                    )
+                    setup_embed = discord.Embed(title="MC Server: Survival (normal)", description=setup_desc, color=embed_color)
+                    await thread.send(embed=setup_embed, view=MCServerSetupView(ticketcog=self, server_type="survival"))
+                elif title == "Survival (Skyblock)":
+                    setup_desc = (
+                        "Du hast ein Anliegen zu unserem Skyblock-Bereich auf dem Survival-Server?\n\n"
+                        "Worum geht es?\n"
+                        "- Wähle eine Option aus dem Drop-Down Menü aus!"
+                    )
+                    setup_embed = discord.Embed(title="MC Server: Survival (Skyblock)", description=setup_desc, color=embed_color)
+                    await thread.send(embed=setup_embed, view=MCServerSetupView(ticketcog=self, server_type="skyblock"))
+                elif title == "Events":
+                    setup_desc = (
+                        "Auf unserem Minecraft-Server finden regelmäßig verschiedene Events statt. Große Minecraft-Gottesdienste gibt es zum Beispiel zu Ostern, Pfingsten, im Sommer oder zu Weihnachten. Diese werden dann auf unserer Webseite und hier im Discord in #neuigkeiten angekündigt.\n\n"
+                        "Um welche Events geht es?\n- Wähle eine Option aus dem Drop-Down Menü aus!"
+                    )
+                    setup_embed = discord.Embed(title="MC Server: Events", description=setup_desc, color=embed_color)
+                    await thread.send(embed=setup_embed, view=MCServerSetupView(ticketcog=self, server_type="events"))
+                elif title == "Bug-Report":
+                    bug_desc = (
+                        "Du möchtest einen Bug auf unserem Minecraft-Server melden? Wenn der Fehler nicht kritisch ist oder dich nicht nur im Einzelnen betrifft, kannst du diesen Bug-Report auch gerne im #feedback Forum hier im Discord posten.\n\n"
+                        "Beschreibe ansonsten nun hier den Vorfall. Was genau ist passiert und wann ist es passiert? Oft ist es auch relevant, auf welchem Unter-Server und in welcher Welt du das Problem hattest. Oder in welcher Minecraft-Edition (Java oder Bedrock) und in welcher Minecraft-Version du spielst. Wenn möglich, kannst du hier auch gerne Screenshots von dem Fehler schicken. Vielen Dank!"
+                    )
+                    bug_embed = discord.Embed(title="MC Server: Bug-Report", description=bug_desc, color=embed_color)
+                    await thread.send(embed=bug_embed)
+                elif title in ("Launcher & Mods", "Minecraft Launcher und Mods"):
+                    lm_desc = (
+                        "Du hast inhaltliche Fragen zu bekannten Minecraft-Launcher, Mod-Packs oder Mods? Oder Probleme bei der Installation oder Verwendung? Dann kannst du diese gerne hier stellen.\n\n"
+                        "In unserem Minecraft Regelwerk ist beschrieben, wann welche Art von Client-Modifikationen (Mods) auf unserem Server erlaubt oder verboten sind. Im Zweifel kannst du hier gerne entsprechend nachfragen."
+                    )
+                    lm_embed = discord.Embed(title="Minecraft Launcher und Mods", description=lm_desc, color=embed_color)
+                    await thread.send(embed=lm_embed)
+                elif title == "Vor-Ort Treffen und Besuch":
+                    meetup_desc = (
+                        "Der Minecraft-Server Canstein-Berlin gehört zum Bibellabor der von Cansteinschen Bibelanstalt in Berlin e.V. Mehrmals im Jahr bieten wir als Verein Community-Treffen (Reallife-Treffen) in unserem Vereins-Sitz in Berlin an. Ebenso gibt es Auswärts-Termine, bei denen wir als Bibellabor an einem externen Veranstaltungs-Ort etwas anbieten und dort anzutreffen sind.\n\n"
+                        "Um welche der geplanten Veranstaltungen geht es? - Wähle eine Option aus dem Drop-Down Menü aus!"
+                    )
+                    meetup_embed = discord.Embed(title="Vor-Ort Treffen und Besuch", description=meetup_desc, color=embed_color)
+                    await thread.send(embed=meetup_embed, view=MCServerSetupView(ticketcog=self, server_type="events"))
+            except Exception:
+                logger.exception("Failed to send setup/embed submenu message in ticket thread")
             
             success_embed = simple_embed(TICKET_CREATION_SUCCESS.format(thread=thread.mention), color=0x00ff00)
-            await interaction.response.send_message(embed=success_embed, ephemeral=True, delete_after=20)
+            try:
+                if not interaction.response.is_done():
+                    await interaction.response.send_message(embed=success_embed, ephemeral=True, delete_after=20)
+                else:
+                    await interaction.followup.send(embed=success_embed, ephemeral=True, delete_after=20)
+            except Exception:
+                # Last-resort: try followup if response failed
+                try:
+                    await interaction.followup.send(embed=success_embed, ephemeral=True, delete_after=20)
+                except Exception:
+                    logger.debug("Failed to send ticket creation confirmation")
             logger.info(f"Ticket thread '{thread.name}' created for user {interaction.user}.")
 
         except Exception as e:
             logger.error(f"Error creating ticket thread for user {interaction.user}: {e}")
             error_embed = simple_embed(TICKET_CREATION_ERROR, color=0xff0000)
-            await interaction.response.send_message(embed=error_embed, ephemeral=True, delete_after=10)
+            try:
+                if not interaction.response.is_done():
+                    await interaction.response.send_message(embed=error_embed, ephemeral=True, delete_after=10)
+                else:
+                    await interaction.followup.send(embed=error_embed, ephemeral=True, delete_after=10)
+            except Exception:
+                try:
+                    await interaction.followup.send(embed=error_embed, ephemeral=True, delete_after=10)
+                except Exception:
+                    logger.debug("Failed to send ticket creation error message")
             print(f"Fehler beim Erstellen des Tickets: {e}")
             print(traceback.format_exc())
 

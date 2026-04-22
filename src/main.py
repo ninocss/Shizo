@@ -11,11 +11,6 @@ from util.constants import *
 from views.ticketviews import *
 from cogs.tickets import TicketCog
 from cogs.github import GithubCog
-from cogs.music import MusicCog
-from cogs.radio import RadioCog
-from cogs.counting import CountingCog
-from cogs.guess_the_number import GuessNumberCog
-from cogs.art import ArtCog
 
 # Setup colored logging
 def setup_logging() -> logging.Logger:
@@ -52,7 +47,7 @@ class Bot(commands.Bot):
         super().__init__(
             command_prefix="!",
             intents=intents,
-            activity=discord.Activity(name="/github • /art", type=discord.ActivityType.competing),
+            activity=discord.Activity(name="made with ❤️ by nino161er", type=discord.ActivityType.competing),
             *args, **kwargs
         )
 
@@ -61,11 +56,6 @@ class Bot(commands.Bot):
         cogs = [
             TicketCog(self),
             GithubCog(self),
-            #MusicCog(self),
-            #RadioCog(self),
-            CountingCog(self),
-            GuessNumberCog(self),
-            #ArtCog(self)
         ]
         
         for cog in cogs:
@@ -84,25 +74,15 @@ class Bot(commands.Bot):
             self.add_view(view)
 
         # Sync commands
+        logger.info(f"🔄 SYNCING COMMANDS 🔄")
         guild_id = discord.Object(id=SYNC_SERVER)
         synced = await self.tree.sync(guild=guild_id)
         cmd_names = [cmd.name for cmd in synced]
-        logger.info(f"🔄 COMMAND SYNC COMPLETE 🔄")
-        logger.info(f"📊 Total Commands: {len(cmd_names)}")
-        logger.info(f"📋 Commands: {', '.join(cmd_names)}")
-        logger.info(f"🎯 Guild: {SYNC_SERVER}")
-            
-    async def on_ready(self):
-        logger.info(f"Logged in as {self.user} (ID: {self.user.id})")
-        logger.info(f"---------------------------------------------------")
+        logger.info(f"📋 Commands synced: {', '.join(cmd_names)}")
         
-        try:
-            music_cog = self.get_cog('MusicCog')
-            if music_cog:
-                await music_cog.send_static_message()
-                logger.info("Sent static music embed.")
-        except Exception as e:
-            logger.error(f"Error sending static music embed: {e}")
+    async def on_ready(self):
+        logger.info(f"💚 Online as {self.user} (ID: {self.user.id})")
+        logger.info(f">>>>>>>>>>>>>>>>>>>>>>>>>>>>> Done! <<<<<<<<<<<<<<<<<<<<<<<<<<<<<<")
 
 async def main():
     bot = Bot()
@@ -110,5 +90,3 @@ async def main():
     
 if __name__ == "__main__":
     asyncio.run(main())
-
-

@@ -29,28 +29,89 @@ async def closeTicket(self, interaction: discord.Interaction):
         return
 
     TICKET_CREATOR = guild.get_member(TICKET_CREATOR_ID)
-
+    # fallback to fetching the member in case they're not in the bot's member cache
     if TICKET_CREATOR is None:
-        logger.warning(f"Ticket creator not found in guild for ID {TICKET_CREATOR_ID}")
-        embed = discord.Embed(
-            title=f"{ERROR}",
-            description="Member wurde nicht gefunden.",
-            color=0xff0000
-        )
-        
-    for member in interaction.channel.members:
+        try:
+            TICKET_CREATOR = await guild.fetch_member(TICKET_CREATOR_ID)
+        except Exception:
+            logger.warning(f"Ticket creator not found in guild for ID {TICKET_CREATOR_ID}")
+            embed = discord.Embed(
+                title=f"{ERROR}",
+                description="Member wurde nicht gefunden.",
+                color=0xff0000
+            )
+    logger.info(f"closeTicket: channel={interaction.channel} channel_id={getattr(interaction.channel,'id',None)} ticket_creator_id={TICKET_CREATOR_ID} invoked_by={interaction.user}")
+    # Explicitly remove the original ticket creator unless they are in the support/admin team
+    try:
+        if TICKET_CREATOR is not None:
+            creator_is_support = (
+                TICKET_CREATOR.guild_permissions.administrator or
+                any(role.name in [TEAM_ROLE, MOD, TRAIL_MOD] for role in TICKET_CREATOR.roles)
+            )
+
+            logger.info(f"Resolved ticket creator: {TICKET_CREATOR} (id={getattr(TICKET_CREATOR,'id',None)}) support={creator_is_support}")
+            # log current channel members (ids and display names) to diagnose membership checks
+            try:
+                members_info = []
+                for m in interaction.channel.members:
+                    m_id = getattr(m, 'id', None) or (getattr(getattr(m, 'user', None), 'id', None))
+                    m_name = getattr(m, 'display_name', None) or getattr(getattr(m, 'user', None), 'name', None)
+                    members_info.append(f"{m_name}({m_id})")
+                logger.info(f"Channel members: {', '.join(members_info)}")
+            except Exception:
+                logger.debug("Could not enumerate channel members for logging")
+
+            if not creator_is_support:
+                try:
+                    if isinstance(interaction.channel, discord.Thread) and any((getattr(m, 'id', None) == getattr(TICKET_CREATOR, 'id', None)) or (getattr(getattr(m, 'user', None), 'id', None) == getattr(TICKET_CREATOR, 'id', None)) for m in interaction.channel.members):
+                        logger.info(f"Removing ticket creator {TICKET_CREATOR} (id={TICKET_CREATOR.id}) from ticket channel {interaction.channel}")
+                        await interaction.channel.remove_user(TICKET_CREATOR)
+                        await asyncio.sleep(0.5)
+
+                        if SEND_TICKET_FEEDBACK:
+                            dm_embed = discord.Embed(
+                                title=f"{LOCK_EMOJI} Ticket geschlossen - {interaction.channel.name}",
+                                description=f"**Geschlossen von:** {interaction.user.mention}\n**Grund:** Keine Angabe\n**Server:** {interaction.guild.name}",
+                                color=0xff0000
+                            )
+                            dm_embed.set_thumbnail(url=interaction.guild.icon)
+                            dm_embed.set_author(name=interaction.user.name, icon_url=interaction.user.avatar.url if interaction.user.avatar else None)
+                            dm_embed.set_footer(text=EMBED_FOOTER)
+                            dm_embed.timestamp = discord.utils.utcnow()
+                            logger.info(f"Sending closed ticket embed to creator {TICKET_CREATOR}")
+                            try:
+                                await TICKET_CREATOR.send(embed=dm_embed)
+                            except Exception:
+                                logger.debug(f"Could not DM ticket creator {TICKET_CREATOR}")
+                except Exception as e:
+                    logger.error(f"Error removing ticket creator: {e}")
+
+    except Exception:
+        # don't fail closing completely if something goes wrong while handling the creator
+        logger.exception("Unexpected error while handling ticket creator removal")
+
+    # Remove any non-support members from the thread (skip the creator if already removed)
+    for member in list(interaction.channel.members):
+        # member may be a User; resolve to guild member
         guild_member = guild.get_member(member.id)
         if guild_member is None:
             continue
-            
+
+        # skip original creator if it's the same member (we already handled them)
+        if TICKET_CREATOR is not None and guild_member.id == TICKET_CREATOR.id:
+            continue
+
         has_required_role = any(role.name in [TEAM_ROLE, MOD, TRAIL_MOD] for role in guild_member.roles)
 
         if not has_required_role:
-            logger.info(f"Removing user {guild_member} from ticket channel {interaction.channel}")
-            await interaction.channel.remove_user(guild_member)
-            await asyncio.sleep(0.5)
+            logger.info(f"Removing user {guild_member} from ticket channel {interaction.channel} (has_required_role={has_required_role})")
+            try:
+                await interaction.channel.remove_user(guild_member)
+                await asyncio.sleep(0.5)
+            except Exception as e:
+                logger.exception(f"Could not remove user {guild_member}: {e}")
 
-            if SEND_TICKET_FEEDBACK is True:                
+            if SEND_TICKET_FEEDBACK is True:
                 embed = discord.Embed(
                     title=f"{LOCK_EMOJI} Ticket geschlossen - {interaction.channel.name}",
                     description=f"**Geschlossen von:** {interaction.user.mention}\n**Grund:** Keine Angabe\n**Server:** {interaction.guild.name}",
@@ -61,7 +122,10 @@ async def closeTicket(self, interaction: discord.Interaction):
                 embed.set_footer(text=EMBED_FOOTER)
                 embed.timestamp = discord.utils.utcnow()
                 logger.info(f"Sending closed ticket embed to {guild_member}")
-                await guild_member.send(embed=embed)
+                try:
+                    await guild_member.send(embed=embed)
+                except Exception:
+                    logger.debug(f"Could not DM user {guild_member}")
         else:
             logger.debug(f"User {guild_member} has required role, not removing from ticket channel")
         
@@ -488,10 +552,12 @@ class CloseReasonConfirmView(View):
             pass
 
         TICKET_CREATOR = guild.get_member(TICKET_CREATOR_ID)
-
         if TICKET_CREATOR is None:
-            logger.warning(f"Ticket creator not found in guild for ID {TICKET_CREATOR_ID}")
-            pass
+            try:
+                TICKET_CREATOR = await guild.fetch_member(TICKET_CREATOR_ID)
+            except Exception:
+                logger.warning(f"Ticket creator not found in guild for ID {TICKET_CREATOR_ID}")
+                pass
         
         embed = discord.Embed(
             title=f"{LOCK_EMOJI} Ticket geschlossen - {interaction.channel.name}",
@@ -503,19 +569,58 @@ class CloseReasonConfirmView(View):
         embed.set_footer(text=EMBED_FOOTER)
         embed.timestamp = discord.utils.utcnow()
         
-        for member in interaction.channel.members:
+        # Explicitly remove the original ticket creator unless they are in the support/admin team
+        try:
+            if TICKET_CREATOR is not None:
+                creator_is_support = (
+                    TICKET_CREATOR.guild_permissions.administrator or
+                    any(role.name in [TEAM_ROLE, MOD, TRAIL_MOD] for role in TICKET_CREATOR.roles)
+                )
+
+                if not creator_is_support:
+                    try:
+                        if isinstance(interaction.channel, discord.Thread) and TICKET_CREATOR in interaction.channel.members:
+                            logger.info(f"Removing ticket creator {TICKET_CREATOR} from ticket channel {interaction.channel}")
+                            await interaction.channel.remove_user(TICKET_CREATOR)
+                            await asyncio.sleep(0.5)
+
+                            if SEND_TICKET_FEEDBACK:
+                                try:
+                                    await TICKET_CREATOR.send(embed=embed)
+                                except Exception:
+                                    logger.debug(f"Could not DM ticket creator {TICKET_CREATOR}")
+                    except Exception as e:
+                        logger.error(f"Error removing ticket creator: {e}")
+
+        except Exception:
+            logger.exception("Unexpected error while handling ticket creator removal")
+
+        # Remove any non-support members from the thread (skip the creator if already removed)
+        for member in list(interaction.channel.members):
             guild_member = guild.get_member(member.id)
+            if guild_member is None:
+                continue
+
+            if TICKET_CREATOR is not None and guild_member.id == TICKET_CREATOR.id:
+                continue
+
             logger.info(f"trying to remove users: {guild_member}")
             has_required_role = any(role.name in [TEAM_ROLE, MOD, TRAIL_MOD] for role in guild_member.roles)
 
             if not has_required_role:
                 logger.info(f"Removing user {guild_member} from ticket channel {interaction.channel}")
-                await interaction.channel.remove_user(guild_member)
-                await asyncio.sleep(0.5)
-                
+                try:
+                    await interaction.channel.remove_user(guild_member)
+                    await asyncio.sleep(0.5)
+                except Exception as e:
+                    logger.debug(f"Could not remove user {guild_member}: {e}")
+
                 if SEND_TICKET_FEEDBACK is True:
                     logger.info(f"Sending closed ticket embed to {guild_member}")
-                    await guild_member.send(embed=embed)
+                    try:
+                        await guild_member.send(embed=embed)
+                    except Exception:
+                        logger.debug(f"Could not DM user {guild_member}")
             else:
                 logger.debug(f"User {guild_member} has required role, not removing from ticket channel")
             
@@ -720,6 +825,11 @@ class CloseThreadView(View):
             return
 
         TICKET_CREATOR = guild.get_member(TICKET_CREATOR_ID)
+        if TICKET_CREATOR is None:
+            try:
+                TICKET_CREATOR = await guild.fetch_member(TICKET_CREATOR_ID)
+            except Exception:
+                logger.warning(f"Ticket creator not found in guild for ID {TICKET_CREATOR_ID}")
 
         if not any(role.name in [MOD, TRAIL_MOD] for role in interaction.user.roles):
             logger.warning(f"{interaction.user} tried to reopen ticket without support role in {interaction.channel}")
@@ -791,6 +901,54 @@ class CloseConfirmView(View):
         logger.info(f"{interaction.user} cancelled closing ticket without reason in {interaction.channel}")
         await interaction.message.delete()
 
+# Confirmation view for deleting a ticket
+class DeleteConfirmView(View):
+    def __init__(self, ticketcog: "TicketCog", timeout=180):
+        super().__init__(timeout=timeout)
+        self.ticketcog = ticketcog
+        self.bot = ticketcog.bot if ticketcog and hasattr(ticketcog, 'bot') else None
+
+        yes_button = Button(emoji=CHECK, style=DANGER, label="Ja, löschen")
+        yes_button.callback = self.yes_button
+
+        no_button = Button(emoji=UNCHECK, style=SECONDARY, label="Nein")
+        no_button.callback = self.no_button
+
+        self.add_item(yes_button)
+        self.add_item(no_button)
+
+    async def yes_button(self, interaction: discord.Interaction):
+        logger.info(f"{interaction.user} confirmed deleting ticket in {interaction.channel}")
+        # acknowledge the interaction before deleting the channel
+        try:
+            await interaction.response.send_message(embed=discord.Embed(title="✅ Ticket gelöscht", description="Das Ticket wird jetzt gelöscht."), ephemeral=True)
+        except Exception:
+            # fallback: try to delete the confirmation message
+            try:
+                await interaction.message.delete()
+            except Exception:
+                pass
+
+        # remove mapping if present
+        try:
+            delete_ticket_creator(interaction.channel.id)
+        except Exception:
+            logger.debug("Could not delete ticket creator mapping")
+
+        # finally delete the channel/thread
+        try:
+            await interaction.channel.delete()
+            logger.info(f"Deleted ticket channel {interaction.channel}")
+        except Exception as e:
+            logger.exception(f"Failed to delete ticket channel: {e}")
+
+    async def no_button(self, interaction: discord.Interaction):
+        logger.info(f"{interaction.user} cancelled deleting ticket in {interaction.channel}")
+        try:
+            await interaction.message.delete()
+        except Exception:
+            pass
+
 # The ticket-setup view
 class TicketSetupView(View):
     def __init__(self, ticketcog: "TicketCog"):
@@ -800,134 +958,356 @@ class TicketSetupView(View):
 # The ticket-setup view dropdown
 class TicketDropdown(discord.ui.Select):
     options = [
-        discord.SelectOption(label=LABEL_DISCORD, emoji="💬", value="discord"),
-        discord.SelectOption(label=LABEL_MINECRAFT, emoji="⛏️", value="minecraft"),
-        discord.SelectOption(label=LABEL_BEREICH, emoji="🚧", value="bereich"),
-        discord.SelectOption(label=LABEL_PARZELLE, emoji="🛠️", value="parzelle"),
-        discord.SelectOption(label=LABEL_ENTBANNUNG, emoji="📝", value="entbannung"),
-        discord.SelectOption(label=LABEL_SONSTIGES, emoji="❓", value="sonstiges")
+        discord.SelectOption(label="MC Server: Kreativ-Server", emoji="🚀", value="mc_kreativ", description="Grundstücke, Bau-Wettbewerbe, Befehle, Schematics …"),
+        discord.SelectOption(label="MC Server: Survival (normal)", emoji="🌳", value="mc_survival", description="Grundstück sichern, Items verloren, Befehle, Allgemeine Fragen …"),
+        discord.SelectOption(label="MC Server: Survival (Skyblock)", emoji="☁️", value="mc_skyblock", description="Items verloren, Befehle, Allgemeine Fragen …"),
+        discord.SelectOption(label="MC Server: Events", emoji="🎉", value="mc_events", description="Fragen zu Community-Events und Minecraft-Gottesdiensten"),
+        discord.SelectOption(label="MC Server: Bug-Report", emoji="🐛", value="mc_bugreport", description="Inhaltliche und technische Fehler und Probleme melden"),
+        discord.SelectOption(label="Minecraft Launcher und Mods", emoji="💻", value="mc_launcher_mods", description="allgemeine oder technische Fragen zu Minecraft Launcher und Mods"),
+        discord.SelectOption(label="Server-Beitritt / Bedrock Support", emoji="📝", value="mc_bedrock", description="Fragen und Probleme zum Server-Beitritt, Versions-Support und Bedrock-Support"),
+        discord.SelectOption(label="Vor-Ort Treffen und Besuch", emoji="📍", value="meetup", description="Alles über unsere Community-Treffen, Auswärts-Termine und Besuch-Anfragen"),
+        discord.SelectOption(label=LABEL_DISCORD, emoji="💬", value="discord", description="Fragen zum Discord-Server"),
+        discord.SelectOption(label="Regelvertoß / Spieler melden", emoji="⚠️", value="report", description="einen Regelvertoß / Spieler melden, Streifälle, Beschwerden"),
+        discord.SelectOption(label="Entbannungsantrag", emoji="🔒", value="entbannung", description="einen Entbannungsantrag stellen"),
+        discord.SelectOption(label="Kooperationen", emoji="👥", value="kooperation", description="Fragen zu unseren Kooperations-Angeboten"),
+        discord.SelectOption(label="Bewerbung", emoji="📚", value="bewerbung", description="Fragen zu unseren Rängen und der Bewerbung"),
+        discord.SelectOption(label="Account gehackt / neuer Account", emoji="🔧", value="account", description="gehackten Account melden / Account-Daten transferieren lassen"),
+        discord.SelectOption(label=LABEL_SONSTIGES, emoji="❓", value="sonstiges", description="andere Anliegen"),
     ]
-    
+
     def __init__(self, ticketcog: "TicketCog"):
         super().__init__(placeholder=PLACEHOLDER_TEXT, options=self.options, custom_id="ticket_dropdown")
         self.ticketcog = ticketcog
-        
+
     async def callback(self, interaction: discord.Interaction):
-        logger.info(f"{interaction.user} selected '{self.values[0]}' in TicketDropdown in {interaction.channel}")
-        
+        selection = self.values[0]
+        logger.info(f"{interaction.user} selected '{selection}' in TicketDropdown in {interaction.channel}")
+
+        ticket_types = {
+            "mc_kreativ": {"Title": "Kreativ-Server", "message": "Bitte schildere dein Anliegen zum Kreativ-Server.", "color": 0xffaa00},
+            "mc_survival": {"Title": "Survival (normal)", "message": "Bitte schildere dein Anliegen zum Survival-Server (normal).", "color": 0x007b1f},
+            "mc_skyblock": {"Title": "Survival (Skyblock)", "message": "Bitte schildere dein Anliegen zum Skyblock-Server.", "color": 0x00ffbf},
+            "mc_events": {"Title": "Events", "message": "Bitte schildere dein Anliegen zu Events.", "color": 0xc926ff},
+            "mc_bugreport": {"Title": "Bug-Report", "message": "Bitte beschreibe den Fehler oder das Problem möglichst genau.", "color": 0x0040ff},
+            "mc_launcher_mods": {"Title": "Launcher & Mods", "message": "Bitte schildere dein Anliegen zu Launcher oder Mods.", "color": 0x6cd900},
+            "mc_bedrock": {"Title": "Server-Beitritt / Bedrock Support", "message": "Bitte schildere dein Anliegen zum Server-Beitritt oder Bedrock-Support.", "color": 0x0040ff},
+            "meetup": {"Title": "Vor-Ort Treffen und Besuch", "message": "Bitte schildere dein Anliegen zu Treffen oder Besuch.", "color": 0xffff00},
+            "discord": {"Title": LABEL_DISCORD, "message": "Bitte schildere dein Anliegen zum Discord-Server.", "color": 0x5865f2},
+            "report": {"Title": "Regelverstoß / Spieler melden", "message": "Bitte schildere den Regelverstoß oder das Problem.", "color": 0xff0000},
+            "entbannung": {"Title": "Entbannungsantrag", "message": "Bitte schildere deinen Entbannungsantrag.", "color": 0x646473},
+            "kooperation": {"Title": "Kooperationen", "message": "Bitte schildere dein Anliegen zu Kooperationen.", "color": 0xffff00},
+            "bewerbung": {"Title": "Bewerbung", "message": "Bitte schildere dein Anliegen zur Bewerbung.", "color": 0x989898},
+            "account": {"Title": "Account gehackt / neuer Account", "message": "Gehackten Account melden / Account-Daten transferieren lassen.", "color": 0xff4c4d},
+            "sonstiges": {"Title": LABEL_SONSTIGES, "message": "Bitte schildere dein Anliegen.", "color": 0xffffff},
+        }
+
+        if selection in ticket_types:
+            # acknowledge interaction to avoid "Unknown interaction" during long processing
+            try:
+                if not interaction.response.is_done():
+                    await interaction.response.defer()
+            except Exception as e:
+                logger.debug(f"Could not defer interaction: {e}")
+
+            try:
+                await self.ticketcog.create_ticket_thread(interaction=interaction, fields=ticket_types[selection])
+            except Exception as e:
+                logger.error(f"Error creating ticket thread for selection '{selection}': {e}")
+                try:
+                    await interaction.followup.send("Fehler beim Erstellen des Tickets.", ephemeral=True)
+                except Exception:
+                    try:
+                        if not interaction.response.is_done():
+                            await interaction.response.send_message("Fehler beim Erstellen des Tickets.", ephemeral=True)
+                    except Exception:
+                        logger.debug("Failed to notify user about ticket creation error")
+                return
+
+        # restore the parent view so the original message keeps the setup UI
         parent_view = self.view
-        self.placeholder = PLACEHOLDER_TEXT
-        
-        if self.values[0] == "discord":
-            fields = {
-                "Title": TITLE_DISCORD,
-                "message": MESSAGE_GENERAL
-            }
-            
-            await self.ticketcog.create_ticket_thread(interaction=interaction, fields=fields)
-            
-        elif self.values[0] == "minecraft":
-            fields = {
-                "Title": TITLE_MINECRAFT,
-                "message": MESSAGE_GENERAL
-            }
-            await self.ticketcog.create_ticket_thread(interaction=interaction, fields=fields)
-            
-        elif self.values[0] == "entbannung":       
-            fields = {
-                "Title": TITLE_ENTBANNUNG,
-                "message": MESSAGE_ENTBANNUNG
-            }
-            await self.ticketcog.create_ticket_thread(interaction=interaction, fields=fields)
-            
-        elif self.values[0] == "bereich":
-            await interaction.response.send_modal(bereichModal(ticketcog=self.ticketcog))
-            
-        elif self.values[0] == "parzelle":
-            await interaction.response.send_modal(parzelleModal(ticketcog=self.ticketcog))
-            
-        elif self.values[0] == "sonstiges":
-            fields = {
-                "Title": TITLE_SONSTIGES,
-                "message": MESSAGE_GENERAL
-            }
-            await self.ticketcog.create_ticket_thread(interaction=interaction, fields=fields)
-        
-        if interaction.response.is_done():
-            await interaction.followup.edit_message(message_id=interaction.message.id, view=parent_view)
-        else: 
-            await interaction.response.edit_message(view=parent_view)
-
-# The delete confirmation view
-class DeleteConfirmView(View):
-    def __init__(self, *, timeout = 180, ticketcog: "TicketCog"):
-        super().__init__(timeout=timeout)
-        self.ticketcog = ticketcog
-        
-        yes_button = Button(emoji=CHECK, style=DANGER, label="Ja, löschen")
-        yes_button.callback = self.yes_button
-        
-        no_button = Button(emoji=UNCHECK, style=SECONDARY, label="Nein")
-        no_button.callback = self.no_button
-        
-        self.add_item(yes_button)
-        self.add_item(no_button)
-        
-    async def yes_button(self, interaction: discord.Interaction):
-        embed = discord.Embed(
-            title="🗑️ Deleting Ticket",
-            description=f"This ticket is being deleted {LOADING_EMOJI}",
-            color=0xff0000
-        )
-        await interaction.response.send_message(embed=embed)
-        logger.info(f"{interaction.user} confirmed deleting ticket in {interaction.channel}")
-        delete_ticket_creator(interaction.channel.id)
-        await interaction.channel.delete()
-        
-    async def no_button(self, interaction: discord.Interaction):
-        logger.info(f"{interaction.user} cancelled deleting ticket in {interaction.channel}")
-        await interaction.message.delete()
-
-class RenameThreadModal(discord.ui.Modal, title="Rename Thread"):
-    def __init__(self):
-        super().__init__()
-        
-    name_input = discord.ui.TextInput(
-        label="New Thread Name",
-        placeholder="Enter the new name for this thread...",
-        max_length=100,
-        required=True
-    )
-    
-    async def on_submit(self, interaction: discord.Interaction):
-        new_name = self.name_input.value.strip()
-        
-        if not new_name:
-            embed = discord.Embed(
-                title="❌ Fehler",
-                description="Thread name cannot be empty!",
-                color=0xff0000
-            )
-            await interaction.response.send_message(embed=embed, ephemeral=True)
-            return
-            
         try:
-            await interaction.channel.edit(name=new_name)
-            logger.info(f"Thread renamed to '{new_name}' by {interaction.user} in {interaction.channel}")
-            embed = discord.Embed(
-                title="✅ Thread umbenannt",
-                description=f"Thread renamed to: **{new_name}**",
-                color=0x00ff00
-            )
-            await interaction.response.send_message(embed=embed, ephemeral=True)
-        except discord.HTTPException as e:
-            logger.error(f"Failed to rename thread: {e}")
-            embed = discord.Embed(
-                title="❌ Fehler",
-                description=f"Failed to rename thread: {str(e)}",
-                color=0xff0000
-            )
-            await interaction.response.send_message(embed=embed, ephemeral=True)
+            # Try editing the original message object directly first
+            try:
+                await interaction.message.edit(view=parent_view)
+            except Exception:
+                # fallback: try editing via followup (if the interaction was deferred)
+                try:
+                    await interaction.followup.edit_message(message_id=interaction.message.id, view=parent_view)
+                except Exception as e:
+                    logger.debug(f"Could not update parent view after selection: {e}")
+        except Exception as e:
+            logger.debug(f"Could not update parent view after selection: {e}")
+
+class MCServerSubSelect(discord.ui.Select):
+    def __init__(self, server_type: str, ticketcog: "TicketCog"):
+        self.server_type = server_type
+        self.ticketcog = ticketcog
+
+        options = []
+        mapping = {}
+
+        if server_type == "kreativ":
+            options = [
+                discord.SelectOption(label="Parzellen (Grundstücke)", value="grundstuecke", description="Übertragen von Parzellen, Ändern von Parzellen"),
+                discord.SelectOption(label="Bau-Wettbewerbe", value="bauwettbewerbe", description="Fragen zu laufenden Bau-Wettbewerben"),
+                discord.SelectOption(label="Befehle", value="befehle", description="Fragen zu speziellen Befehlen auf dem CR-Server"),
+                discord.SelectOption(label="Schematics", value="schematics", description="Schematics hochladen lassen oder als Download bekommen"),
+                discord.SelectOption(label="Allgemeine Fragen", value="allgemein", description="Sonstige Fragen"),
+            ]
+
+            mapping = {
+                "grundstuecke": {
+                    "label": "Parzellen (Grundstücke)",
+                    "description": (
+                        "Auf dem Kreativ-Server gibt es unterschiedliche Welten für die jeweiligen Projekte und Themen. "
+                        "Manche Welten sind für jeden frei nutzbar, während andere Welten nur für bestimmte Projekte oder Gruppen gedacht sind.\n\n"
+                        "🏷 **Neues Grundstück erhalten**\n"
+                        "Wenn du eine neue Parzelle (= Grundstück / Plot) erhalten möchtest, kannst du dies in einer der Parzellen-Welten tun. Verwende dazu die Befehle `/warp plots` (kleine Parzellen) oder `/warp babel` (große Parzellen) und gebe dort den Befehl `/plot auto` ein.\n\n"
+                        "↩️ **Auf einem Workshop-Grundstück weiterbauen**\n"
+                        "Du hast bei einem Workshop oder einem Messe-Stand von uns ein Grundstück bebaut und möchtest weiterbauen? Nenne uns gerne die Plot-Koordinaten (Beispiel: '-3;10') oder die Canstein-Nummer (Beispiel: 'Canstein2'), sowie deinen privaten Minecraft-Namen. Dann können wir dir das Grundstück auf deinen Account übertragen.\n\n"
+                        "Wenn du keine freien Parzellen mehr zur Verfügung hast, kannst du dich gerne hier bei uns melden. Wir können dir eine neue Parzelle geben, wenn deine bisherigen ausreichend befüllt sind.\n\n"
+                        "📒 **weitere Parzellen-Befehle**\n"
+                        "- `/plot home <ggf. Nummer>` - teleportiere dich zu einem deiner Parzellen\n"
+                        "- `/plot visit <Spieler-Name> <ggf. Nummer>` - teleportiere dich zu einer bestimmten Parzelle eines anderen Spielers\n"
+                        "- `/plot info` - zeige dir die Regions-Einstellungen deiner und fremder Parzellen an\n"
+                        "- `/plot trust <Spieler-Name>` - füge einen Mitspieler zu deiner eigenen Parzelle hinzu\n"
+                        "- `/plot remove <Spieler-Name>` - entferne einen (eingetragenen) Mitspieler von deiner eigenen Parzelle\n"
+                        "- `/plot flag <'list', 'set', 'remove', 'add', 'info'>` - Parzellen-Einstellungen (Flags) deiner eigenen Parzelle auflisten und abändern\n\n"
+                        "🏗️ **mehr Platz für größere Projekte**\n"
+                        "In Ausnahmefällen können nebeneinanderliegende Parzellen auch vom Server-Team verbunden werden. Oder brauchst du für ein großes Projekt mehr Platz? Schreibe uns, was du vorhast und zeige uns gerne die Parzelle, wenn du für dieses Projekt schon etwas gebaut hast.\n\n"
+                        "_Wenn du noch Fragen oder Anliegen hast, kannst du diese nun gerne hier stellen._"
+                    ),
+                    "color": 0xffaa00,
+                },
+                "bauwettbewerbe": {
+                    "label": "Bau-Wettbewerbe",
+                    "description": (
+                        "Auf dem Server finden ab und zu Bau-Wettbewerbe zu speziellen Themen statt, für die es dann eigene Projekt-Welten mit allen Informationen und den Grundstücken gibt. Meist gehen die Bau-Wettbewerbe mehrere Monate lang. Und oft gibt es am Ende auch Preise für die besten Einsendungen zu gewinnen. Teilnehmen kann bei den Wettbewerben jeder.\n\n"
+                        "**Aktuell finden jedoch keine Bau-Wettbewerbe statt.** Wenn du dennoch Fragen zu früheren oder zukünftigen Bau-Wettbewerben hast, kannst du die gerne hier stellen."
+                    ),
+                    "color": 0xffaa00,
+                },
+                "befehle": {
+                    "label": "Befehle",
+                    "description": (
+                        "Du hast Fragen zu den Befehlen auf dem Kreativ-Server? Am Spawn (`/spawn`) befindet sich ein Banner mit den wichtigsten Befehlen für den Kreativ-Server. Ansonsten kannst du gerne hier deine Frage stellen.\n\n"
+                        "> **Anmerkung:** Eine Start-Welt mit Befehlen, die auf dem gesamten Server-Netzwerk gelten, ist bereits in Planung."
+                    ),
+                    "color": 0x00D166,
+                },
+                "schematics": {
+                    "label": "Schematics",
+                    "description": (
+                        "Ab dem Rang ‚Mitglied+‘ hast du auf dem Kreativ-Server in vielen Welten WorldEdit-Rechte. Wir bieten an, WorldEdit Schematics auf den Server hochladen zu lassen oder eigenen Bauten zum Download zur Verfügung zu stellen. Deine Schematics kannst du auf dem Server mit dem Befehl `//schem list` abfragen.\n\n"
+                        "📤 **Schematic hochladen**\n"
+                        "Wenn du eine Schematic auf den Server zur eigenen Verwendung hochladen möchtet, kannst du dies hier gerne anfragen. Lade dafür die Schematic-Datei hoch und schreibe, wie du in Minecraft heißt. Achte bei Schematics von anderen Leuten darauf, die Lizenzen zu beachten und die Credits entsprechend zu vergeben.\n\n"
+                        "📥 **Schematics herunterladen**\n"
+                        "Wenn du eines deiner Bauten als Schematic zum Download erhalten möchtest, kannst du das hier gerne anfragen. Schreibe uns dafür hier den Namen der Schematic, die du in deinem Schematic-Ordner abgespeichert hast und nenne uns deinen Minecraft-Namen."
+                    ),
+                    "color": 0x6cd900,
+                },
+                "allgemein": {
+                    "label": "Allgemeine Fragen",
+                    "description": "Okay. Stelle nun gerne deine Frage!",
+                    "color": 0xffffff,
+                },
+            }
+
+        elif server_type == "survival":
+            options = [
+                discord.SelectOption(label="Regions-Sicherung (Grundstück)", value="grundstueck", description="Anfragen oder Ändern einer Regions-Sicherung"),
+                discord.SelectOption(label="Items / XP verloren", value="items", description="Erstattungs-Anfrage von Items / XP-Punkte"),
+                discord.SelectOption(label="Befehle", value="befehle", description="Fragen zu speziellen Befehlen auf dem SV-Server"),
+                discord.SelectOption(label="Role-Play", value="roleplay", description="Fragen zum Role-Play System auf dem SV-Server"),
+                discord.SelectOption(label="Allgemeine Fragen", value="allgemein", description="Allgemeine Fragen"),
+            ]
+
+            mapping = {
+                "grundstueck": {
+                    "label": "Regions-Sicherung (Grundstück)",
+                    "description": (
+                        "🏷️ **Neues Grundstück**\n"
+                        "Wenn du eine Stelle in der Bau-Welt gefunden hast, in dem du gerne eine Region gesichert haben möchtest, damit dein Gebautes vor anderen geschützt ist, dann kannst du dies hier gerne anfragen. Schreibe uns bitte, um welche Bau-Welt es geht (Oberwelt oder Nether). Nenne uns gerne die Block-Koordinaten der zwei gegenüberliegenden Eck-Punkte des gewünschten Grundstücks. In der Regel sichern wir die Region in der gesamten Höhe (Y-Koordinate).\n\n"
+                        "> **Tipp:** Mit \"F3\" kannst du dir die Block-Koordinaten anzeigen lassen.\n\n"
+                        "Schaue auch bitte, ob du genug Abstand zu Regionen / Bauten anderer Spieler hast.\n\n"
+                        "🛠️ **Grundstück selber bearbeiten**\n"
+                        "- `/rg info` - zeige dir die Regions-Einstellungen deiner und fremder Regionen an\n"
+                        "- `/region addmember <Grundstücks-Name> <Spieler-Name>` - füge einen Mitspieler zu deiner eigenen Region hinzu\n"
+                        "- `/region removemember <Grundstücks-Name> <Spieler-Name>` - entferne einen (eingetragenen) Mitspieler von deiner eigenen Region\n"
+                        "- `/region flag <Grundstücks-Name> greeting <Nachricht>` - füge eine Begrüßung / Warnung / Information für den Betritt des Grundstücks hinzu\n"
+                        "- `/region flag <Grundstücks-Name> farewell <Nachricht>` - füge eine Verabschiedung / Information für das Verlassen des Grundstücks hinzu\n\n"
+                        "✨ **Weitere Grundstücks-Einstellungen / Flags ändern**\n"
+                        "Sonderwünsche für bestimmte Einstellungen und Flags (wie beispielsweise ‚PVP‘, ‚chest-access‘ oder ‚sethome‘) kannst du hier gerne erfragen. Schreibe bitte auch, warum dies geändert werden soll. Viele Flags stellen wir nur in Ausnahmefällen um.\n\n"
+                        "_Wenn du noch Fragen oder Anliegen hast, kannst du diese nun gerne hier stellen._"
+                    ),
+                    "color": 0x007b1f,
+                },
+                "items": {
+                    "label": "Items / XP verloren",
+                    "description": (
+                        "Das Server-Team kann in bestimmten Fällen verlorene Items oder Erfahrungspunkte erstatten. Weitere Infos zur Rückerstattung findest du in unsere Minecraft Regelwerk unter §1.3 Rückerstattungen.\n\n"
+                        "Kannst du bitte genau beschreiben, wann und in welcher Welt du gestorben bist oder sie verloren hast? Was ist passiert? Kannst du mit Screenshots oder sogar einer Replay-Aufnahme Beweise liefern? Das Support-Team wird sich dann ggf. intern beraten und entscheiden, ob du die Items / XPs wiederbekommst. Danke!"
+                    ),
+                    "color": 0x00D166,
+                },
+                "befehle": {
+                    "label": "Befehle",
+                    "description": (
+                        "Du hast Fragen zu den Befehlen auf dem normalen Survival-Server? Am Spawn (`/spawn`) befinden sich im Rathaus ein paar informative Banner mit den wichtigsten Befehlen für den Survival-Server. Ebenso auch oben auf der fliegenden Starter-Insel beim Spawn. Ansonsten kannst du gerne hier deine Frage stellen.\n\n"
+                        "> **Anmerkung:** Eine Start-Welt mit Befehlen, die auf dem gesamten Server-Netzwerk gelten, ist bereits in Planung."
+                    ),
+                    "color": 0x00D166,
+                },
+                "roleplay": {
+                    "label": "Role-Play",
+                    "description": (
+                        "❔ **Allgemeine Fragen**\n"
+                        "Du hast Fragen zum Role-Play System auf dem Survival-Server? Alle grundlegenden Richtlinien hierzu sind in unserem Minecraft Regelwerk beschrieben.\n\n"
+                        "👥 **Neue Allianz beantragen**\n"
+                        "Für die Beantragung einer neuen Allianz benötigen wir von dir den Allianznamen, den Minecraft-Namen der Leitung der Allianz und die aktuelle Anzahl der Mitglieder.\n\n"
+                        "🏘️ **Neue Allianz-Region anfragen**\n"
+                        "Für den Role-Play benötigt es feste Regionen, in denen dieses Spielen erlaubt ist. Hier kannst du neue Role-Play Region von uns anlegen lassen. Schreibe uns bitte - wie bei einer normalen Bau-Region auch - um welche Bau-Welt es geht (Oberwelt oder Nether). Und beschreibe den Standort oder nenne uns die gewünschten Block-Koordinaten der zwei gegenüberliegenden Eck-Punkte für die Region."
+                    ),
+                    "color": 0x00D166,
+                },
+                "allgemein": {"label": "Allgemeine Fragen", "description": "Okay. Stelle nun deine Frage oder schreibe, was du uns mitteilen möchtest!", "color": 0xffffff},
+            }
+
+        elif server_type == "skyblock":
+            options = [
+                discord.SelectOption(label="Items / XP verloren", value="items", description="Erstattungs-Anfrage von Items / XP-Punkte"),
+                discord.SelectOption(label="Befehle", value="befehle", description="Fragen zu speziellen Befehlen auf dem Skyblock-Bereich"),
+                discord.SelectOption(label="Allgemeine Fragen", value="allgemein", description="Allgemeine Fragen"),
+            ]
+
+            mapping = {
+                "items": {"label": "Items / XP verloren", "description": (
+                    "Das Server-Team kann in bestimmten Fällen verlorene Items oder Erfahrungspunkte erstatten. Weitere Infos zur Rückerstattung findest du in unsere Minecraft Regelwerk unter §1.3 Rückerstattungen.\n\n"
+                    "Kannst du bitte genau beschreiben, wann und in welcher Welt du gestorben bist oder sie verloren hast? Was ist passiert? Kannst du mit Screenshots oder sogar einer Replay-Aufnahme Beweise liefern? Das Support-Team wird sich dann ggf. intern beraten und entscheiden, ob du die Items / XPs wiederbekommst. Danke!"
+                ), "color": 0x00D166},
+                "befehle": {"label": "Befehle", "description": (
+                    "Du hast Fragen zu den Befehlen für den Skyblock-Bereich? Am Spawn (`/skyblock`) auf der fliegenden Starter-Insel befinden sich ein paar informative Banner mit den wichtigsten Befehlen für den Skyblock Spiel-Modus. Ansonsten kannst du gerne hier deine Frage stellen.\n\n"
+                    "> **Anmerkung:** Eine Start-Welt mit Befehlen, die auf dem gesamten Server-Netzwerk gelten, ist bereits in Planung."
+                ), "color": 0x00D166},
+                "allgemein": {"label": "Allgemeine Fragen", "description": "Okay. Stelle nun deine Frage oder schreibe, was du uns mitteilen möchtest!", "color": 0xffffff},
+            }
+
+        elif server_type == "events":
+            options = [
+                discord.SelectOption(label="Allgemeine Community-Events", value="community", description="Fragen zu allgemeinen Community-Events"),
+                discord.SelectOption(label="Kleine Gottesdienste (auf SV)", value="small_gottesdienst", description="Fragen zu kleinen Gottesdiensten"),
+                discord.SelectOption(label="Große Gottesdienste (auf ES)", value="large_gottesdienst", description="Fragen zu großen Gottesdiensten"),
+                discord.SelectOption(label="Sonstiges", value="allgemein", description="Anderes"),
+            ]
+
+            mapping = {
+                "community": {"label": "Allgemeine Community-Events", "description": "Fragen zu den allgemeinen Community-Events", "color": 0xc926ff},
+                "small_gottesdienst": {"label": "Kleine Gottesdienste (auf SV)", "description": "Fragen zu den kleinen Gottesdiensten auf dem SV-Server", "color": 0xc926ff},
+                "large_gottesdienst": {"label": "Große Gottesdienste (auf ES)", "description": "Fragen zu den großen Gottesdiensten auf dem ES-Server", "color": 0xc926ff},
+                "allgemein": {"label": "Sonstiges", "description": "Stelle nun deine Frage zum Event.", "color": 0xc926ff},
+            }
+
+        else:
+            options = [discord.SelectOption(label="Allgemein", value="allgemein", description="Allgemeine Anfrage")]
+            mapping = {"allgemein": {"label": "Allgemein", "description": "Bitte schildere dein Anliegen.", "color": 0xffffff}}
+
+        super().__init__(placeholder="Bitte wähle eine Kategorie aus...", options=options, custom_id=f"{server_type}_subselect")
+        self.mapping = mapping
+
+    async def callback(self, interaction: discord.Interaction):
+        selection = self.values[0]
+        data = self.mapping.get(selection)
+        if data is None:
+            await interaction.response.send_message("Unbekannte Kategorie.", ephemeral=True)
+            return
+        # Build the detailed embed for the chosen subcategory
+        embed = discord.Embed(
+            title=f"MC Server: {('Kreativ-Server' if self.server_type=='kreativ' else 'Survival' if self.server_type in ['survival','skyblock'] else 'Events')}",
+            description=data.get("description"),
+            color=data.get("color", 0x00D166)
+        )
+        embed.set_footer(text=EMBED_FOOTER)
+        embed.timestamp = discord.utils.utcnow()
+
+        chosen_label = data.get('label')
+
+        # Defer the interaction and then:
+        # 1) try to update the main ticket overview embed to include the chosen category
+        # 2) delete the setup message that contains this select view
+        # 3) post the detailed embed and a clear "Gewählte Kategorie" message
+        try:
+            await interaction.response.defer()
+
+            # Try to find the original ticket overview message (first bot embed with overview title)
+            overview_msg = None
+            async for m in interaction.channel.history(limit=50):
+                if m.author == interaction.client.user and m.embeds:
+                    try:
+                        if m.embeds[0].title == TICKET_OVERVIEW_TITLE:
+                            overview_msg = m
+                            break
+                    except Exception:
+                        pass
+
+            # fallback: first bot embed message
+            if overview_msg is None:
+                async for m in interaction.channel.history(limit=50):
+                    if m.author == interaction.client.user and m.embeds:
+                        overview_msg = m
+                        break
+
+            if overview_msg:
+                try:
+                    ov = overview_msg.embeds[0]
+                    ov_dict = ov.to_dict()
+                    fields = ov_dict.get('fields', [])
+
+                    # update existing Kategorie field if present
+                    updated = False
+                    for f in fields:
+                        if 'Kategorie' in f.get('name', ''):
+                            f['value'] = f"{chosen_label} (ausgewählt von {interaction.user.display_name})"
+                            updated = True
+                            break
+
+                    if not updated:
+                        fields.append({
+                            'name': '🗂️ Gewählte Kategorie',
+                            'value': f"{chosen_label} (ausgewählt von {interaction.user.display_name})",
+                            'inline': False
+                        })
+
+                    ov_dict['fields'] = fields
+                    new_embed = discord.Embed.from_dict(ov_dict)
+                    await overview_msg.edit(embed=new_embed)
+                except Exception as e:
+                    logger.debug(f"Could not update overview embed with chosen category: {e}")
+
+            # delete the setup message (the one that contains this select view)
+            try:
+                await interaction.message.delete()
+            except Exception as e:
+                logger.debug(f"Failed to delete setup message: {e}")
+
+            # finally send the detailed embed and a clear selection message
+            await interaction.followup.send(content=f"**Gewählte Kategorie:** {chosen_label}", embed=embed)
+
+        except Exception as e:
+            logger.exception(f"Error handling subselect callback: {e}")
+            try:
+                await interaction.followup.send("Fehler beim Verarbeiten der Auswahl.", ephemeral=True)
+            except:
+                pass
+
+
+class MCServerSetupView(discord.ui.View):
+    def __init__(self, ticketcog: "TicketCog", server_type: str):
+        super().__init__(timeout=None)
+        self.ticketcog = ticketcog
+        self.server_type = server_type
+        self.add_item(MCServerSubSelect(server_type, ticketcog))
+        
+
 
 class RenameThread():
     def __init__(self):

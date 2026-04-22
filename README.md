@@ -10,36 +10,6 @@ A feature‑rich Discord bot built with Python and `discord.py`, offering:
 
 ## Features
 
-### 🎵 Music System
-
-- Play songs from YouTube URLs or search terms
-- Queue management (add, view, shuffle, clear, auto‑play)
-- YouTube Music “chart” / trending integration
-- Random “Inspire Me” song picker with rich now‑playing embeds
-- Per‑guild music queues with duration formatting
-- Uses `yt-dlp` + FFmpeg with tuned options in `util.constants.YT_OPTS`
-
-Main implementation: `cogs.music.MusicCog`
-
-Core helpers:
-
-- `MusicCog.make_embed`
-- `MusicCog.play_next`
-- `MusicCog.create_now_playing_embed`
-- `MusicCog.update_progress`
-- `util.music.queue`
-
-### 📻 Radio
-
-- Play internet radio streams from URLs or pre‑defined stations
-- Support for `.m3u`, `.pls`, `.asx`, `.xspf` playlist formats
-- Rich “Radio Stream Started” embed with listener count
-
-Core implementation: `cogs.radio.RadioCog`, especially:
-
-- `RadioCog._parse_playlist_file`
-- `RadioCog._create_radio_embed`
-
 ### 🎫 Ticket System
 
 - Slash command `/tickets` for server‑wide ticket setup
@@ -73,12 +43,6 @@ Slash command `/github`:
 
 Implementation: `cogs.github.GithubCog`
 
-### 🎮 Games & Fun
-
-- **ASCII Art**: `/art` command returns random ASCII art from `util.games.ascii_arts` via `cogs.art.ArtCog`
-- **Counting Game**: `cogs.counting.CountingCog` manages a counting channel with chance to fail using `counting.random_fail_message`
-- **Guess the Number**: `cogs.guess_the_number.GuessNumberCog` with temperature emojis via `GuessNumberCog.get_temperature_emoji`
-
 ---
 
 ## Tech Stack
@@ -106,12 +70,7 @@ See requirements.txt for full dependency list.
 └── src/
     ├── main.py                # Bot entry point
     ├── cogs/
-    │   ├── art.py             # /art ASCII art command
-    │   ├── counting.py        # Counting game
     │   ├── github.py          # /github command
-    │   ├── guess_the_number.py# Guess the number game
-    │   ├── music.py           # Music system (queues, charts, history)
-    │   ├── radio.py           # Internet radio player
     │   └── tickets.py         # Ticket system core
     ├── lang/
     │   └── texts.py           # Localized text constants
@@ -120,14 +79,7 @@ See requirements.txt for full dependency list.
     │   └── ticketmodals.py    # Ticket & transcript modals
     ├── util/
     │   ├── constants.py       # Config, emojis, YT_OPTS, etc.
-    │   ├── transcript_template.html # HTML transcript theme
-    │   ├── games/
-    │   │   └── ascii_arts.py  # ASCII art collection + getter
-    │   ├── music/
-    │   │   └── queue.py       # Music queue abstraction
-    │   └── tickets/
-    │       ├── ticket_creator.py # Ticket storage helpers
-    │       └── transcript.py  # Transcript generator
+    │   └── transcript_template.html # HTML transcript theme
     └── views/
         └── ticketviews.py     # Ticket and music UI Views
 ```
@@ -165,9 +117,6 @@ DISCORD_TOKEN=your_bot_token_here
 
 # Guild ID where slash commands are synced
 SERVER=your_server_id_here
-
-# Music interaction channel (e.g. #music)
-I_CHANNEL=your_music_channel_id_here
 
 # Transcript log channel
 TRANS_CHANNEL=your_transcript_channel_id_here
@@ -209,7 +158,6 @@ Many core options live in [`util.constants`](src/util/constants.py):
 
 - Ticket file path: `TICKET_CREATOR_FILE = "config/tickets.json"`
 - Emojis: `CHECK`, `UNCHECK`, `LOCK_EMOJI`, `TRANSCRIPT_EMOJI`, etc.
-- YT‑DLP options: [`YT_OPTS`](src/util/constants.py)
 - Embed footer: `EMBED_FOOTER = "❤️ Shizo | by nino.css"`
 - Feature toggles:
   - `SEND_TICKET_FEEDBACK`
