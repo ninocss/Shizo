@@ -88,32 +88,70 @@ class TicketCog(commands.Cog):
     async def on_message(self, message: discord.Message):
         if message.author.bot:
             return
+
+        # only support/staff may use these quick message commands
         if not message.author.guild_permissions.kick_members:
             return
-        if not message.content.lower().startswith("?close") and not message.content.lower().startswith("?c"):
+
+        content = message.content.strip()
+        lc = content.lower()
+
+        # === close command (existing behaviour) ===
+        if lc.startswith("?close") or lc.startswith("?c"):
+            if not isinstance(message.channel, discord.Thread):
+                logger.warning("Close command used outside of a thread.")
+                embed = simple_embed(CAN_ONLY_BE_USED_IN_THREAD, color=0xff0000)
+                await message.channel.send(embed=embed)
+                return
+
+            if message.channel.parent_id != int(TICKET_CHANNEL_ID):
+                logger.warning("Close command used in a thread not under the ticket channel.")
+                embed = simple_embed(CAN_ONLY_BE_USED_IN_THREAD, color=0xff0000)
+                await message.channel.send(embed=embed)
+                return
+
+            cancel_btn = Button(emoji=UNCHECK, label=CANCEL_BUTTON_LABEL, style=SECONDARY)
+            cancel_btn.callback = self.cancel_btn_callback
+
+            view = PersistentCloseView(ticketcog=self, bot=self.bot)
+            view.add_item(cancel_btn)
+
+            ticket_creator = get_ticket_creator(message.channel.id)
+
+            await message.channel.send(view=view, content=f"{TICKET_CLOSE_PROMPT}".format(ticket_creator=ticket_creator))
             return
 
-        if not isinstance(message.channel, discord.Thread):
-            logger.warning("Close command used outside of a thread.")
-            embed = simple_embed(CAN_ONLY_BE_USED_IN_THREAD, color=0xff0000)
-            await message.channel.send(embed=embed, ephemeral=True)
-            return
-        
-        if message.channel.parent_id != int(TICKET_CHANNEL_ID):
-            logger.warning("Close command used in a thread not under the ticket channel.")
-            embed = simple_embed(CAN_ONLY_BE_USED_IN_THREAD, color=0xff0000)
-            await message.channel.send(embed=embed, ephemeral=True)
-            return
-        
-        cancel_btn = Button(emoji=UNCHECK, label=CANCEL_BUTTON_LABEL, style=SECONDARY)
-        cancel_btn.callback = self.cancel_btn_callback
+        # === rename via message: '?rename Neuer Name' or '?r Neuer Name' ===
+        if lc.startswith("?rename ") or lc.startswith("?r "):
+            if not isinstance(message.channel, discord.Thread):
+                logger.warning("Rename command used outside of a thread.")
+                embed = simple_embed(CAN_ONLY_BE_USED_IN_THREAD, color=0xff0000)
+                await message.channel.send(embed=embed)
+                return
 
-        view = PersistentCloseView(ticketcog=self, bot=self.bot)
-        view.add_item(cancel_btn)
-        
-        ticket_creator = get_ticket_creator(message.channel.id)
+            if message.channel.parent_id != int(TICKET_CHANNEL_ID):
+                logger.warning("Rename command used in a thread not under the ticket channel.")
+                embed = simple_embed(CAN_ONLY_BE_USED_IN_THREAD, color=0xff0000)
+                await message.channel.send(embed=embed)
+                return
 
-        await message.channel.send(view=view, content=f"{TICKET_CLOSE_PROMPT}".format(ticket_creator=ticket_creator))
+            parts = content.split(" ", 1)
+            if len(parts) < 2 or not parts[1].strip():
+                embed = simple_embed("Bitte gib einen neuen Namen an, z.B. '?rename Neues Ticket'", color=0xffa500)
+                await message.channel.send(embed=embed)
+                return
+
+            new_name = parts[1].strip()[:100]
+            try:
+                await message.channel.edit(name=new_name)
+                embed = simple_embed(f"🎫 Ticket umbenannt zu: {new_name}", color=0x00ff00)
+                await message.channel.send(embed=embed)
+                logger.info(f"Ticket {message.channel.id} renamed to {new_name} by {message.author}")
+            except Exception as e:
+                logger.exception(f"Error renaming thread: {e}")
+                embed = simple_embed(f"Fehler beim Umbenennen: {e}", color=0xff0000)
+                await message.channel.send(embed=embed)
+            return
 
     async def cancel_btn_callback(self, interaction):
         logger.info(f"Cancel button clicked by {interaction.user} in message {interaction.message.id}.")
@@ -237,20 +275,80 @@ class TicketCog(commands.Cog):
                     )
                     bug_embed = discord.Embed(title="MC Server: Bug-Report", description=bug_desc, color=embed_color)
                     await thread.send(embed=bug_embed)
-                elif title in ("Launcher & Mods", "Minecraft Launcher und Mods"):
+                elif title == "Minecraft Launcher und Mods":
                     lm_desc = (
-                        "Du hast inhaltliche Fragen zu bekannten Minecraft-Launcher, Mod-Packs oder Mods? Oder Probleme bei der Installation oder Verwendung? Dann kannst du diese gerne hier stellen.\n\n"
-                        "In unserem Minecraft Regelwerk ist beschrieben, wann welche Art von Client-Modifikationen (Mods) auf unserem Server erlaubt oder verboten sind. Im Zweifel kannst du hier gerne entsprechend nachfragen."
+                        "Du hast inhaltliche Fragen zu bekannte Minecraft-Launcher, Mod-Packs oder Mods? Oder Probleme bei der Installation oder Verwendung? Dann kannst du diese gerne hier stellen.\n\n"
+                        "In unserem Minecraft Regelwerk unter https://docu.canstein-berlin.de/rules/minecraft/#3-modifikationen ist beschrieben, wann welche Art von Client-Modifikationen (Mods) auf unserem Server erlaubt oder verboten sind. Im Zweifel kannst du hier gerne entsprechend nachfragen."
                     )
                     lm_embed = discord.Embed(title="Minecraft Launcher und Mods", description=lm_desc, color=embed_color)
+                    lm_embed.set_footer(text=EMBED_FOOTER)
+                    lm_embed.timestamp = discord.utils.utcnow()
                     await thread.send(embed=lm_embed)
                 elif title == "Vor-Ort Treffen und Besuch":
                     meetup_desc = (
-                        "Der Minecraft-Server Canstein-Berlin gehört zum Bibellabor der von Cansteinschen Bibelanstalt in Berlin e.V. Mehrmals im Jahr bieten wir als Verein Community-Treffen (Reallife-Treffen) in unserem Vereins-Sitz in Berlin an. Ebenso gibt es Auswärts-Termine, bei denen wir als Bibellabor an einem externen Veranstaltungs-Ort etwas anbieten und dort anzutreffen sind.\n\n"
-                        "Um welche der geplanten Veranstaltungen geht es? - Wähle eine Option aus dem Drop-Down Menü aus!"
+                        "Der Minecraft-Server _Canstein-Berlin_ gehört zum Bibellabor der **von Cansteinschen Bibelanstalt in Berlin e.V.**. Mehrmals im Jahr bieten wir als Verein Community-Treffen (Reallife-Treffen) in unserem Vereins-Sitz in Berlin an. Ebenso gibt es Auswärts-Termine, bei denen wir als Bibellabor an einem externen Veranstaltungs-Ort etwas anbieten und dort anzutreffen sind - ob als Besucher oder zum Mithelfen. Community-Treffen solcher Art werden allgemein im #neuigkeiten Channel hier im Discord verkündet. Fragen zu diesen Treffen können via E-Mail an communitytreffen@canstein-berlin.de oder über das Ticket hier direkt gestellt werden.\n\n"
+                        "Wir sind aber auch auf Anfrage in Berlin besuchbar und bieten an, sich bei uns das 'analoge Bibellabor' samt unserer Schreibwerkstatt in der Philipp-Melanchthon-Kirche in Berlin-Neukölln anzusehen. Hierfür kann man sich an unsere Mitarbeiter via E-Mail an kontakt@canstein-berlin.de oder über das Support-Ticket hier wenden.\n\n"
+                        "Um welche der geplanten Veranstaltungen geht es?\n- Wähle eine Option aus dem Drop-Down Menü aus!"
                     )
                     meetup_embed = discord.Embed(title="Vor-Ort Treffen und Besuch", description=meetup_desc, color=embed_color)
-                    await thread.send(embed=meetup_embed, view=MCServerSetupView(ticketcog=self, server_type="events"))
+                    meetup_embed.set_footer(text=EMBED_FOOTER)
+                    meetup_embed.timestamp = discord.utils.utcnow()
+                    await thread.send(embed=meetup_embed, view=MCServerSetupView(ticketcog=self, server_type="meetup"))
+                elif title == "Regelverstoß / Spieler melden":
+                    report_desc = (
+                        "**Eindeutigen Regelverstoß melden**\n"
+                        "Möchtest du einen Regelverstoß eines Spielers melden? Dann hast du hier die Möglichkeit dazu! Beschreibe bitte genau den Vorfall: Was ist genau passiert? Wann ist es in etwa passiert und wo ist es passiert? Wer war daran beteiligt? Kannst du uns vielleicht sogar Screenshots, eine Replay-Aufnahme oder andere Beweise liefern? Gibt es Zeugen oder eine Vorgeschichte? Unser Support-Team steht dir hier gerne zur Verfügung. Wir nehmen Regelverstöße sehr ernst. Danke für dein Vertrauen!\n\n"
+                        "**Spieler melden**\n"
+                        "Gibt es Streifälle oder möchtest du eine Beschwerde gegen jemand anderen einreichen? Dann hast du hier die Möglichkeit dazu! Schreibe bitte um wen es geht und was genau passiert ist. Sind noch andere Personen dabei beteiligt? Gibt es eine Vorgeschichte? Was würdest du von dieser Person erwarten?"
+                    )
+                    report_embed = discord.Embed(title="Regelverstoß / Spieler melden", description=report_desc, color=embed_color)
+                    report_embed.set_footer(text=EMBED_FOOTER)
+                    report_embed.timestamp = discord.utils.utcnow()
+                    await thread.send(embed=report_embed)
+                elif title == "Entbannungsantrag":
+                    unban_desc = (
+                        "Du wurdest **auf unserem Minecraft-Server** gebannt und möchtest einen Entbannungsantrag schreiben oder Einspruch gegen deinen Bann erheben? Wir bannen nicht ohne Grund. Lese dir unsere Regeln (https://docu.canstein-berlin.de/rules) durch und schreibe uns hier deinen Antrag. Wir werden intern darüber abstimmen und uns bei dir melden.\n\n"
+                        "Erwähne in deinem Antrag bitte auch, wie du in Minecraft heißt und wann du in etwa gebannt wurdest."
+                    )
+                    unban_embed = discord.Embed(title="Entbannungsantrag", description=unban_desc, color=embed_color)
+                    unban_embed.set_footer(text=EMBED_FOOTER)
+                    unban_embed.timestamp = discord.utils.utcnow()
+                    await thread.send(embed=unban_embed)
+                elif title == "Kooperationen":
+                    coop_desc = (
+                        "Der Minecraft-Server _Canstein-Berlin_ gehört zum Bibellabor der **von Cansteinschen Bibelanstalt in Berlin e.V.**. Wir als Verein bieten externen Organisationen (Kirchengemeinde, Arbeitsgemeinschaft, Schulklasse, Konfi-Gruppe, Verein, …) Kooperation verschiedener Art an, um biblische / pädagogische / didaktische Minecraft-Projekte gemeinsam durchzuführen. Wir bieten beispielsweise Workshops und Platz für Bau-Events an, oder stellen bei langfristigen Kooperationen auch Platz und Rechte auf unserem Minecraft Kooperations-Server zur Verfügung.\n\n"
+                        "Alle Infos rund um unsere Kooperations-Angebote finden Sie in unserer Doku: https://docu.canstein-berlin.de/supplies.\n\n"
+                        "Bei Fragen können Sie sich gerne per E-Mail an kontakt@canstein-berlin.de oder hier im Support-Ticket an uns wenden."
+                    )
+                    coop_embed = discord.Embed(title="Kooperationen", description=coop_desc, color=embed_color)
+                    coop_embed.set_footer(text=EMBED_FOOTER)
+                    coop_embed.timestamp = discord.utils.utcnow()
+                    await thread.send(embed=coop_embed)
+                elif title == "Bewerbung":
+                    apply_desc = (
+                        "Du möchtest dich bei uns auf dem Minecraft-Server **als Bauhilfe** oder **im Team** mit einbringen? Oder möchtest du eine feste Aufgabe bei Vor-Ort Projekte in Berlin übernehmen? Wir freuen uns über dein Engagement!\n\n"
+                        "Du kannst hier **allgemeine Fragen** zum entsprechenden Rang oder zum **Bewerbungs-Verfahren** stellen. Für die Bewerbung selber ist aber unser Online-Formular zu verwenden: https://canstein-berlin.de/minecraft-bewerbung. Wenn deine gewünschte Rolle dort namentlich nicht aufgeführt wird, kannst du dich gerne hier bei uns melden.\n\n"
+                        "Um welchen Rang geht es?\n- Wähle eine Option aus dem Drop-Down Menü aus!"
+                    )
+                    apply_embed = discord.Embed(title="Bewerbung", description=apply_desc, color=embed_color)
+                    apply_embed.set_footer(text=EMBED_FOOTER)
+                    apply_embed.timestamp = discord.utils.utcnow()
+                    await thread.send(embed=apply_embed, view=MCServerSetupView(ticketcog=self, server_type="bewerbung"))
+                elif title == "Account gehackt / neuer Account":
+                    acc_desc = (
+                        "Wurde dein Minecraft oder Discord-Account gehackt oder hast du keinen Zugriff mehr auf deinen Account? Wir können deinen alten Account zur Sicherheit sperren, damit keiner mit deinem Namen Unfug anstellt. Lass dir bei Zugriffs-Problemen gerne von unserem Support-Team helfen oder melde dich direkt bei Discord / Microsoft. Bei einem Account-Wechsel können wir deine Account-Daten (Rang, Grundstücke, Schematics etc.) auf den neuen Account transferieren lassen, wenn wir uns sicher sind, dass die Anfrage von der selben Person kommt.\n\n"
+                        "Beschreibe uns deine Situation und nenne uns die zugehörigen Account-Namen."
+                    )
+                    acc_embed = discord.Embed(title="Account gehackt / neuer Account", description=acc_desc, color=embed_color)
+                    acc_embed.set_footer(text=EMBED_FOOTER)
+                    acc_embed.timestamp = discord.utils.utcnow()
+                    await thread.send(embed=acc_embed)
+                elif title == LABEL_DISCORD:
+                    d_desc = "Bitte schildere dein Problem oder deine Frage. Wie können wir dir helfen? Was ist dein Anliegen?"
+                    d_embed = discord.Embed(title=LABEL_DISCORD, description=d_desc, color=embed_color)
+                    d_embed.set_footer(text=EMBED_FOOTER)
+                    d_embed.timestamp = discord.utils.utcnow()
+                    await thread.send(embed=d_embed)
             except Exception:
                 logger.exception("Failed to send setup/embed submenu message in ticket thread")
             
@@ -315,6 +413,38 @@ class TicketCog(commands.Cog):
         
         logger.info(f"Ticket menu selection sent to {interaction.user} in thread {interaction.channel}.")
 
+    @app_commands.command(name="rename", description="Rename the current ticket thread")
+    @app_commands.describe(new_name="Neuer Name des Tickets")
+    async def rename(self, interaction: discord.Interaction, new_name: str):
+        logger.info(f"Rename command invoked by {interaction.user} in channel {interaction.channel}.")
+
+        if not isinstance(interaction.channel, discord.Thread):
+            logger.warning("Rename command used outside of a thread.")
+            embed = simple_embed(CAN_ONLY_BE_USED_IN_THREAD, color=0xff0000)
+            await interaction.response.send_message(embed=embed, ephemeral=True)
+            return
+
+        if interaction.channel.parent_id != int(TICKET_CHANNEL_ID):
+            logger.warning("Rename command used in a thread not under the ticket channel.")
+            embed = simple_embed(CAN_ONLY_BE_USED_IN_THREAD, color=0xff0000)
+            await interaction.response.send_message(embed=embed, ephemeral=True)
+            return
+
+        user = interaction.user
+        if not user.guild_permissions.kick_members:
+            embed = simple_embed(NO_PERMISSION, color=0xff0000)
+            await interaction.response.send_message(embed=embed, ephemeral=True)
+            return
+
+        try:
+            await interaction.response.defer()
+            await interaction.channel.edit(name=new_name[:100])
+            await interaction.followup.send(simple_embed(f"🎫 Ticket umbenannt zu: {new_name}", color=0x00ff00), ephemeral=True)
+            logger.info(f"Ticket {interaction.channel.id} renamed to {new_name} by {interaction.user}")
+        except Exception as e:
+            logger.exception(f"Error renaming thread via slash command: {e}")
+            await interaction.followup.send(simple_embed(f"Fehler beim Umbenennen: {e}", color=0xff0000), ephemeral=True)
+
     @commands.Cog.listener(name="THREAD_UPDATE")
     async def on_thread_update(self, before: discord.Thread, after: discord.Thread):
         guild = after.guild
@@ -335,4 +465,9 @@ class TicketCog(commands.Cog):
     async def cog_load(self):
         self.bot.tree.add_command(self.setup, guild=discord.Object(id=SYNC_SERVER))
         self.bot.tree.add_command(self.menu, guild=discord.Object(id=SYNC_SERVER))
+        # add rename slash command for supporters
+        try:
+            self.bot.tree.add_command(self.rename, guild=discord.Object(id=SYNC_SERVER))
+        except Exception:
+            logger.debug("Failed to add rename command to tree (may already exist)")
         logger.info("TicketCog commands loaded to bot tree.")

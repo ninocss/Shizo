@@ -989,7 +989,7 @@ class TicketDropdown(discord.ui.Select):
             "mc_skyblock": {"Title": "Survival (Skyblock)", "message": "Bitte schildere dein Anliegen zum Skyblock-Server.", "color": 0x00ffbf},
             "mc_events": {"Title": "Events", "message": "Bitte schildere dein Anliegen zu Events.", "color": 0xc926ff},
             "mc_bugreport": {"Title": "Bug-Report", "message": "Bitte beschreibe den Fehler oder das Problem möglichst genau.", "color": 0x0040ff},
-            "mc_launcher_mods": {"Title": "Launcher & Mods", "message": "Bitte schildere dein Anliegen zu Launcher oder Mods.", "color": 0x6cd900},
+            "mc_launcher_mods": {"Title": "Minecraft Launcher und Mods", "message": "Bitte schildere dein Anliegen zu Launcher oder Mods.", "color": 0x6cd900},
             "mc_bedrock": {"Title": "Server-Beitritt / Bedrock Support", "message": "Bitte schildere dein Anliegen zum Server-Beitritt oder Bedrock-Support.", "color": 0x0040ff},
             "meetup": {"Title": "Vor-Ort Treffen und Besuch", "message": "Bitte schildere dein Anliegen zu Treffen oder Besuch.", "color": 0xffff00},
             "discord": {"Title": LABEL_DISCORD, "message": "Bitte schildere dein Anliegen zum Discord-Server.", "color": 0x5865f2},
@@ -1207,6 +1207,38 @@ class MCServerSubSelect(discord.ui.Select):
                 "allgemein": {"label": "Sonstiges", "description": "Stelle nun deine Frage zum Event.", "color": 0xc926ff},
             }
 
+        elif server_type == "meetup":
+            options = [
+                discord.SelectOption(label="Community-Treffen", value="community_treffen", description="Reallife-Treffen, Kirchentag etc."),
+                discord.SelectOption(label="privater Bibellabor Besuch", value="privat_besuch", description="privaten Besuch vor Ort anfragen"),
+                discord.SelectOption(label="eigene Veranstaltung bewerben", value="eigene_veranstaltung", description="Anfrage oder Ideen, wo wir dabei sein sollten"),
+            ]
+
+            mapping = {
+                "community_treffen": {"label": "Community-Treffen", "description": "Reallife-Treffen, Kirchentag etc.\n\nWenn du Fragen zum Ablauf oder zur Teilnahme hast, schreibe sie uns hier.", "color": 0xffff00},
+                "privat_besuch": {"label": "privater Bibellabor Besuch", "description": "Du möchtest unser analoges Bibellabor besuchen? Schreibe bitte Datum, ungefähre Teilnehmerzahl und Ansprechpartner sowie eine kurze Beschreibung des Anliegens.", "color": 0xffff00},
+                "eigene_veranstaltung": {"label": "eigene Veranstaltung bewerben", "description": "Du möchtest uns als Mitwirkende oder Aussteller für eine Veranstaltung anfragen? Nenne uns bitte Idee, Ort und Zeitraum sowie Ansprechpartner.", "color": 0xffff00},
+            }
+
+        elif server_type == "bewerbung":
+            options = [
+                discord.SelectOption(label="Eventhilfe", value="eventhilfe", description="Fragen zum Eventhilfe-Rang"),
+                discord.SelectOption(label="Bauhilfe / Bauhilfe+ / Bauexperte:in", value="bauhilfe", description="Fragen zu den Bau-Rängen"),
+                discord.SelectOption(label="Supporthilfe / Supporter", value="supporthilfe", description="Fragen zu den Support-Rängen"),
+                discord.SelectOption(label="Developerhilfe / Developer", value="developerhilfe", description="Fragen zu den Developer-Rängen"),
+                discord.SelectOption(label="Administration", value="administration", description="Fragen zum Admin-Rang"),
+                discord.SelectOption(label="Allgemeine Frage zu den Rängen", value="allgemein", description="Allgemeine Fragen zu den Rängen"),
+            ]
+
+            mapping = {
+                "eventhilfe": {"label": "Eventhilfe", "description": "Fragen zum Eventhilfe-Rang", "color": 0x989898},
+                "bauhilfe": {"label": "Bauhilfe / Bauhilfe+ / Bauexperte:in", "description": "Fragen zu den Bau-Rängen", "color": 0x989898},
+                "supporthilfe": {"label": "Supporthilfe / Supporter", "description": "Fragen zu den Support-Rängen", "color": 0x989898},
+                "developerhilfe": {"label": "Developerhilfe / Developer", "description": "Fragen zu den Developer-Rängen", "color": 0x989898},
+                "administration": {"label": "Administration", "description": "Fragen zum Admin-Rang", "color": 0x989898},
+                "allgemein": {"label": "Allgemeine Frage zu den Rängen", "description": "Stelle nun deine Frage zur Bewerbung oder den Rängen.", "color": 0x989898},
+            }
+
         else:
             options = [discord.SelectOption(label="Allgemein", value="allgemein", description="Allgemeine Anfrage")]
             mapping = {"allgemein": {"label": "Allgemein", "description": "Bitte schildere dein Anliegen.", "color": 0xffffff}}
@@ -1221,8 +1253,17 @@ class MCServerSubSelect(discord.ui.Select):
             await interaction.response.send_message("Unbekannte Kategorie.", ephemeral=True)
             return
         # Build the detailed embed for the chosen subcategory
+        display_titles = {
+            "kreativ": "MC Server: Kreativ-Server",
+            "survival": "MC Server: Survival (normal)",
+            "skyblock": "MC Server: Survival (Skyblock)",
+            "events": "MC Server: Events",
+            "meetup": "Vor-Ort Treffen und Besuch",
+            "bewerbung": "Bewerbung",
+        }
+        embed_title = display_titles.get(self.server_type, "Kategorie")
         embed = discord.Embed(
-            title=f"MC Server: {('Kreativ-Server' if self.server_type=='kreativ' else 'Survival' if self.server_type in ['survival','skyblock'] else 'Events')}",
+            title=embed_title,
             description=data.get("description"),
             color=data.get("color", 0x00D166)
         )
@@ -1290,7 +1331,7 @@ class MCServerSubSelect(discord.ui.Select):
                 logger.debug(f"Failed to delete setup message: {e}")
 
             # finally send the detailed embed and a clear selection message
-            await interaction.followup.send(content=f"**Gewählte Kategorie:** {chosen_label}", embed=embed)
+            await interaction.followup.send(content=f"**Gewählte Kategorie:** {chosen_label}\n\nDanke. Stelle nun deine Frage oder schreibe, was du uns mitteilen möchtest!", embed=embed)
 
         except Exception as e:
             logger.exception(f"Error handling subselect callback: {e}")
@@ -1324,23 +1365,69 @@ class TicketModMenu(View):
         self.ticketcog = ticketcog
         self.bot = bot
         
-        close_btn = Button(emoji=LOCK_EMOJI, label="Close Ticket", style=DANGER)
-        lock_btn = Button(emoji="🔐", label="Lock Ticket", style=PURPLE)
-        rename_btn = Button(emoji="✏️", label="Rename Ticket", style=SECONDARY)
-        trans_btn = Button(emoji=TRANSCRIPT_EMOJI, label="Transcript Ticket", style=SECONDARY)
-        
+        close_btn = Button(emoji=LOCK_EMOJI, label="Ticket schließen", style=DANGER)
+        lock_btn = Button(emoji="🔐", label="Thread sperren", style=PURPLE)
+        rename_btn = Button(emoji="✏️", label="Ticket umbenennen", style=SECONDARY)
+        trans_btn = Button(emoji=TRANSCRIPT_EMOJI, label="Transkript", style=SECONDARY)
+        archive_btn = Button(emoji=ARCHIVE_EMOJI, label="Archivieren", style=SECONDARY)
+        delete_btn = Button(emoji=TRASHCAN_EMOJI, label="Löschen", style=DANGER)
+
         close_btn.callback = self.close_callback
         lock_btn.callback = self.lock_callback
         rename_btn.callback = self.rename_callback
         trans_btn.callback = self.trans_callback
-        
+        archive_btn.callback = self.archive_callback
+        delete_btn.callback = self.delete_callback
+
         self.add_item(close_btn)
         self.add_item(lock_btn)
         self.add_item(rename_btn)
         self.add_item(trans_btn)
+        self.add_item(archive_btn)
+        self.add_item(delete_btn)
         
     async def trans_callback(self, interaction: discord.Interaction):
         await interaction.response.send_modal(TransDesc(bot=self.bot))
+        
+    async def archive_callback(self, interaction: discord.Interaction):
+        logger.info(f"{interaction.user} clicked archive in {interaction.channel}")
+        if not (
+            interaction.user.guild_permissions.administrator or
+            any(role.name in [MOD, TRAIL_MOD] for role in interaction.user.roles)
+        ):
+            logger.warning(f"{interaction.user} tried to archive ticket without permission in {interaction.channel}")
+            embed = discord.Embed(
+                title="❌ Keine Berechtigung",
+                description=NO_PERMISSION,
+                color=0xff0000
+            )
+            await interaction.response.send_message(embed=embed, ephemeral=True)
+            return
+
+        # Use the existing archive modal which allows renaming and archiving
+        await interaction.response.send_modal(ThreadModalRename())
+
+    async def delete_callback(self, interaction: discord.Interaction):
+        logger.info(f"{interaction.user} clicked delete in {interaction.channel}")
+        if not (
+            interaction.user.guild_permissions.administrator or
+            any(role.name in [MOD, TRAIL_MOD] for role in interaction.user.roles)
+        ):
+            logger.warning(f"{interaction.user} tried to delete ticket without permission in {interaction.channel}")
+            embed = discord.Embed(
+                title="❌ Keine Berechtigung",
+                description=NO_PERMISSION,
+                color=0xff0000
+            )
+            await interaction.response.send_message(embed=embed, ephemeral=True)
+            return
+
+        embed = discord.Embed(
+            title="🗑️ Ticket löschen",
+            description=f"{interaction.user.mention} Möchtest du dieses Ticket wirklich löschen?",
+            color=0xff0000
+        )
+        await interaction.response.send_message(embed=embed, view=DeleteConfirmView(ticketcog=self.ticketcog), ephemeral=True)
         
     async def close_callback(self, interaction: discord.Interaction):
         embed = discord.Embed(

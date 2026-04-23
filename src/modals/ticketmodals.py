@@ -29,6 +29,47 @@ class ThreadModalRename(Modal):
         except discord.HTTPException as e:
             await interaction.response.send_message(ARCHIVE_ERROR.format(error=e), ephemeral=True)
 
+
+class RenameThreadModal(Modal):
+    """Modal to rename a ticket/thread without archiving it."""
+    def __init__(self):
+        super().__init__(title="Ticket umbenennen")
+        self.name_TextInput = TextInput(
+            label=RENAME_TICKET_LABEL,
+            placeholder=RENAME_TICKET_PLACEHOLDER,
+            max_length=100,
+            required=True
+        )
+        self.add_item(self.name_TextInput)
+
+    async def on_submit(self, interaction: discord.Interaction):
+        new_name = (self.name_TextInput.value or "").strip()
+        if not new_name:
+            try:
+                await interaction.response.send_message("Bitte gib einen gültigen Namen an.", ephemeral=True)
+            except Exception:
+                pass
+            return
+
+        # permission check: only supporters or admins may rename
+        try:
+            if not (interaction.user.guild_permissions.administrator or interaction.user.guild_permissions.kick_members):
+                await interaction.response.send_message(embed=discord.Embed(title=NO_PERMISSION_TITLE, description=NO_PERMISSION, color=0xff0000), ephemeral=True)
+                return
+        except Exception:
+            # best-effort: continue
+            pass
+
+        try:
+            await interaction.response.defer()
+            await interaction.channel.edit(name=new_name)
+            await interaction.followup.send(f"✅ Ticket umbenannt in: **{new_name}**", ephemeral=True)
+        except Exception as e:
+            try:
+                await interaction.followup.send(f"Fehler beim Umbenennen: {e}", ephemeral=True)
+            except Exception:
+                pass
+
 # Get a summary of the ticket after transcripting it
 class TransDesc(Modal):
     def __init__(self, bot):

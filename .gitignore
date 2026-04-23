@@ -11,3 +11,4 @@ src/modals/__pycache__
 src/util/__pycache__
 src/views/__pycache__
 timeouts.json
+src/cogs/role_test.py

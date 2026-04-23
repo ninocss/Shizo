@@ -16,34 +16,42 @@ SEND_TICKET_FEEDBACK = True # Set to True to send feedback to users when their t
 
 # Load config stuff
 _config_path = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..', '.env'))
-print("Looking for .env at:", _config_path)
-print("Exists:", os.path.exists(_config_path))
-
 _config = dotenv_values(_config_path)
+
 TICKET_CHANNEL_ID = _config.get("TICKET_CHANNEL_ID")
 TOKEN = _config.get('DISCORD_TOKEN')
 SYNC_SERVER = _config.get('SERVER')
-I_CHANNEL = _config.get('I_CHANNEL')
 TRANS_CHANNEL_ID = _config.get('TRANS_CHANNEL')
 TEAM_ROLE = _config.get('TEAM_ROLE')
 MOD = _config.get('MOD')
 TRAIL_MOD = _config.get('TRAIL_MOD')
 TICKET_CREATOR_FILE = "config/tickets.json"
+TEAM_ROLE = _config.get('TEAM')
 
 # Emojis for the bot
-CHECK = "<:3654verifiedrainbow:1496592020033241269>"
-UNCHECK = "<:39574pridedisapproval:1496592097698910339>"
-LOCK_EMOJI = "<:87233lockids:1496591634903732254>"
-TRASHCAN_EMOJI = "<:2775applicationdeniedids:1496591571657818112>"
-ARCHIVE_EMOJI = "<:51219applicationunderreviewids:1496591555262283856>"
-DELETE_EMOJI = "<:2775applicationdeniedids:1496591571657818112>"
-TICKET_OPEN_EMOJI = "<:72076mailids:1496591619627946185>"
-TRANSCRIPT_EMOJI = "<:32535applicationapprivedids:1496591596504879136>"
-REOPEN_EMOJI = "<:85871unlockedids:1496591566565802065>"
-INFO_EMOJI = "<:info:1370443515342884936>"
+CHECK = "<:Yes:1496860724561969375>"
+
+UNCHECK = "<:No:1496860726256472276>"
+
+LOCK_EMOJI = "<:Lock:1496860721441673407>"
+
+TRASHCAN_EMOJI = "<:Trashcan:1496860729796464760>"
+
+ARCHIVE_EMOJI = "<:Archive:1496860727636525116>"
+
+DELETE_EMOJI = "<:Trashcan:1496860729796464760>"
+
+TICKET_OPEN_EMOJI = "<:Mail:1496860731520450610>"
+
+TRANSCRIPT_EMOJI = "<:Trans:1496862379911282799>"
+
+REOPEN_EMOJI = "<:Unlock:1496860723345887302>"
+
+INFO_EMOJI = "<:Info:1496860733374464011>"
+
 LOADING_EMOJI = "<a:57767rainbowboost:1496592103114018947>"
-DANCE_EMOJI = "<a:5332nitro:1496592046109229116>"
-LOCK_W_REASON_EMOJI = "<:81496blockedids:1496591628687773898>"
+
+LOCK_W_REASON_EMOJI = "<:Lock_with_reason:1496860719658958868>"
 
 # Button Styles
 DANGER = discord.ButtonStyle.danger
@@ -52,7 +60,7 @@ GREEN = discord.ButtonStyle.green
 PURPLE = discord.ButtonStyle.blurple
 
 # Embed
-EMBED_FOOTER = "❤️ Shizo | by nino161er"
+EMBED_FOOTER = "❤️ Tickets | by nino161er"
 
 # Base URL for ticket category images (Canstein Berlin collection)
 BASE_TICKET_IMAGE_URL = "https://canstein-berlin.de/discord-ticketsystem/"

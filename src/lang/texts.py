@@ -1,7 +1,7 @@
 from util.constants import *
 
 TEXTS = {
-    "BOT_NAME": "Shizo",
+    "BOT_NAME": "Tickets",
     # First Ticket embed texts
     "SUPPORT_HEADER_TEXT": "Support",
     "EMBED_CREATED": "Embed wurde gesendet",

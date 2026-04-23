@@ -19,9 +19,9 @@ class GithubCog(commands.Cog):
             title="GitHub Repository",
             description=(
                 "Here you can find the source code, report issues, and contribute to the bot!\n\n"
-                "[View Repository](https://github.com/ninocss/Shizo)\n"
-                "[Report an Issue](https://github.com/ninocss/Shizo/issues)\n"
-                "[Contribute](https://github.com/ninocss/Shizo/pulls)\n"
+                "[View Repository](https://github.com/nino161er/Shizo)\n"
+                "[Report an Issue](https://github.com/nino161er/Shizo/issues)\n"
+                "[Contribute](https://github.com/nino161er/Shizo/pulls)\n"
             ),
             color=0x00ff00
         )
@@ -34,7 +34,7 @@ class GithubCog(commands.Cog):
         
         embed.add_field(
             name="Latest Release",
-            value="[Releases](https://github.com/ninocss/Shizo/releases)",
+            value="[Releases](https://github.com/nino161er/Shizo/releases)",
             inline=True
         )
         embed.add_field(

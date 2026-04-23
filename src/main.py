@@ -11,6 +11,7 @@ from util.constants import *
 from views.ticketviews import *
 from cogs.tickets import TicketCog
 from cogs.github import GithubCog
+from cogs.role_test import RoleTestCog
 
 # Setup colored logging
 def setup_logging() -> logging.Logger:
@@ -19,14 +20,14 @@ def setup_logging() -> logging.Logger:
         '%(name_log_color)s%(name)s%(reset)s: [%(levelname)s] %(message_log_color)s%(message)s',
         datefmt='%Y-%m-%d %H:%M:%S',
         log_colors={
-            'DEBUG': 'cyan',
-            'INFO': 'cyan',
+            'DEBUG': 'cyan', 
+            'INFO': 'grey',
             'WARNING': 'yellow',
             'ERROR': 'red',
             'CRITICAL': 'red,bg_white',
         },
         secondary_log_colors={
-            'message': {level: 'white' for level in ['DEBUG', 'INFO', 'WARNING', 'ERROR', 'CRITICAL']},
+            'message': {level: 'light_gray' for level in ['DEBUG', 'INFO', 'WARNING', 'ERROR', 'CRITICAL']},
             'name': {level: 'light_black' for level in ['DEBUG', 'INFO', 'WARNING', 'ERROR', 'CRITICAL']}
         }
     ))
@@ -47,7 +48,7 @@ class Bot(commands.Bot):
         super().__init__(
             command_prefix="!",
             intents=intents,
-            activity=discord.Activity(name="made with ❤️ by nino161er", type=discord.ActivityType.competing),
+            activity=discord.Activity(name="with ❤️ and nino161er", type=discord.ActivityType.playing),
             *args, **kwargs
         )
 
@@ -56,11 +57,12 @@ class Bot(commands.Bot):
         cogs = [
             TicketCog(self),
             GithubCog(self),
+            RoleTestCog(self),
         ]
-        
+
         for cog in cogs:
             await self.add_cog(cog)
-        
+
         # Add persistent views
         ticket_cog = self.get_cog('TicketCog')
         views = [
@@ -69,20 +71,19 @@ class Bot(commands.Bot):
             CloseThreadView(bot=self, ticketcog=ticket_cog),
             ActionsView(bot=self)
         ]
-        
+
         for view in views:
             self.add_view(view)
 
         # Sync commands
-        logger.info(f"🔄 SYNCING COMMANDS 🔄")
         guild_id = discord.Object(id=SYNC_SERVER)
         synced = await self.tree.sync(guild=guild_id)
         cmd_names = [cmd.name for cmd in synced]
-        logger.info(f"📋 Commands synced: {', '.join(cmd_names)}")
+        logger.debug(f"---> Commands synced: {', '.join(cmd_names)}.")
         
     async def on_ready(self):
-        logger.info(f"💚 Online as {self.user} (ID: {self.user.id})")
-        logger.info(f">>>>>>>>>>>>>>>>>>>>>>>>>>>>> Done! <<<<<<<<<<<<<<<<<<<<<<<<<<<<<<")
+        logger.debug(f"---> Online as {self.user}")
+        logger.info(f">>>>>>>>>>>>>>>>>>>>>>>>>>>>> Ready! <<<<<<<<<<<<<<<<<<<<<<<<<<<<<<")
 
 async def main():
     bot = Bot()
