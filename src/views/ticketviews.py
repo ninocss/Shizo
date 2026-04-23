@@ -29,7 +29,7 @@ async def closeTicket(self, interaction: discord.Interaction, reason: str = None
         return
 
     TICKET_CREATOR = guild.get_member(TICKET_CREATOR_ID)
-    # fallback to fetching the member in case they're not in the bot's member cache
+    # fallback to fetching the member in case they`re not in the bot`s member cache
     if TICKET_CREATOR is None:
         try:
             TICKET_CREATOR = await guild.fetch_member(TICKET_CREATOR_ID)
@@ -40,7 +40,7 @@ async def closeTicket(self, interaction: discord.Interaction, reason: str = None
                 description="Das Mitglied wurde nicht gefunden.",
                 color=0xff0000
             )
-    logger.info(f"closeTicket: channel={interaction.channel} channel_id={getattr(interaction.channel,'id',None)} ticket_creator_id={TICKET_CREATOR_ID} invoked_by={interaction.user}")
+    logger.info(f"closeTicket: channel={interaction.channel} channel_id={getattr(interaction.channel, 'id', None)} ticket_creator_id={TICKET_CREATOR_ID} invoked_by={interaction.user}")
     # prepare reason text for embeds/DMs
     reason_text = reason if reason and str(reason).strip() else "Keine Angabe"
     # Explicitly remove the original ticket creator unless they are in the support/admin team
@@ -51,7 +51,7 @@ async def closeTicket(self, interaction: discord.Interaction, reason: str = None
                 any(role.name in [TEAM_ROLE, MOD, TRAIL_MOD] for role in TICKET_CREATOR.roles)
             )
 
-            logger.info(f"Resolved ticket creator: {TICKET_CREATOR} (id={getattr(TICKET_CREATOR,'id',None)}) support={creator_is_support}")
+            logger.info(f"Resolved ticket creator: {TICKET_CREATOR} (id={getattr(TICKET_CREATOR, 'id', None)}) support={creator_is_support}")
             # log current channel members (ids and display names) to diagnose membership checks
             try:
                 members_info = []
@@ -89,7 +89,7 @@ async def closeTicket(self, interaction: discord.Interaction, reason: str = None
                     logger.error(f"Error removing ticket creator: {e}")
 
     except Exception:
-        # don't fail closing completely if something goes wrong while handling the creator
+        # don`t fail closing completely if something goes wrong while handling the creator
         logger.exception("Unexpected error while handling ticket creator removal")
 
     # Remove any non-support members from the thread (skip the creator if already removed)
@@ -99,7 +99,7 @@ async def closeTicket(self, interaction: discord.Interaction, reason: str = None
         if guild_member is None:
             continue
 
-        # skip original creator if it's the same member (we already handled them)
+        # skip original creator if it`s the same member (we already handled them)
         if TICKET_CREATOR is not None and guild_member.id == TICKET_CREATOR.id:
             continue
 
@@ -269,7 +269,7 @@ class ActionsView(View):
         if not history:
             embed = discord.Embed(
                 title="❌ No History Found",
-                description="I couldn't find any songs in the recent history.",
+                description="I couldn`t find any songs in the recent history.",
                 color=0xff0000
             )
             embed.set_footer(text="Try playing some music first!")
@@ -424,7 +424,7 @@ class ActionsView(View):
         if not current_history:
             embed = discord.Embed(
                 title="No History Found",
-                description="I couldn't find any songs in the recent history.",
+                description="I couldn`t find any songs in the recent history.",
                 color=0xff0000
             )
             embed.set_footer(text="Try playing some music first!")
@@ -550,7 +550,7 @@ class CloseReasonConfirmView(View):
         self.add_item(no_button)
         
     async def yes_button(self, interaction: discord.Interaction):
-        logger.info(f"{interaction.user} confirmed closing ticket with reason '{self.reason}' in {interaction.channel}")
+        logger.info(f"{interaction.user} confirmed closing ticket with reason `{self.reason}` in {interaction.channel}")
         await interaction.message.delete()
         global DELETE_USER
         DELETE_USER = interaction.user
@@ -825,7 +825,7 @@ class TicketDropdown(discord.ui.Select):
 
     async def callback(self, interaction: discord.Interaction):
         selection = self.values[0]
-        logger.info(f"{interaction.user} selected '{selection}' in TicketDropdown in {interaction.channel}")
+        logger.info(f"{interaction.user} selected `{selection}` in TicketDropdown in {interaction.channel}")
 
         ticket_types = {
             "mc_kreativ": {"Title": "Kreativ-Server", "message": "Bitte schildere dein Anliegen zum Kreativ-Server.", "color": 0xffaa00},
@@ -856,7 +856,7 @@ class TicketDropdown(discord.ui.Select):
             try:
                 await self.ticketcog.create_ticket_thread(interaction=interaction, fields=ticket_types[selection])
             except Exception as e:
-                logger.error(f"Error creating ticket thread for selection '{selection}': {e}")
+                logger.error(f"Error creating ticket thread for selection `{selection}`: {e}")
                 try:
                     await interaction.followup.send("Fehler beim Erstellen des Tickets.", ephemeral=True)
                 except Exception:
@@ -908,7 +908,7 @@ class MCServerSubSelect(discord.ui.Select):
                         "🏷 **Neues Grundstück erhalten**\n"
                         "Wenn du eine neue Parzelle (= Grundstück / Plot) erhalten möchtest, kannst du dies in einer der Parzellen-Welten tun. Verwende dazu die Befehle `/warp plots` (kleine Parzellen) oder `/warp babel` (große Parzellen) und gebe dort den Befehl `/plot auto` ein.\n\n"
                         "↩️ **Auf einem Workshop-Grundstück weiterbauen**\n"
-                        "Du hast bei einem Workshop oder einem Messe-Stand von uns ein Grundstück bebaut und möchtest weiterbauen? Nenne uns gerne die Plot-Koordinaten (Beispiel: '-3;10') oder die Canstein-Nummer (Beispiel: 'Canstein2'), sowie deinen privaten Minecraft-Namen. Dann können wir dir das Grundstück auf deinen Account übertragen.\n\n"
+                        "Du hast bei einem Workshop oder einem Messe-Stand von uns ein Grundstück bebaut und möchtest weiterbauen? Nenne uns gerne die Plot-Koordinaten (Beispiel: `-3;10`) oder die Canstein-Nummer (Beispiel: `Canstein2`), sowie deinen privaten Minecraft-Namen. Dann können wir dir das Grundstück auf deinen Account übertragen.\n\n"
                         "Wenn du keine freien Parzellen mehr zur Verfügung hast, kannst du dich gerne hier bei uns melden. Wir können dir eine neue Parzelle geben, wenn deine bisherigen ausreichend befüllt sind.\n\n"
                         "📒 **weitere Parzellen-Befehle**\n"
                         "- `/plot home <ggf. Nummer>` - teleportiere dich zu einem deiner Parzellen\n"
@@ -916,7 +916,7 @@ class MCServerSubSelect(discord.ui.Select):
                         "- `/plot info` - zeige dir die Regions-Einstellungen deiner und fremder Parzellen an\n"
                         "- `/plot trust <Spieler-Name>` - füge einen Mitspieler zu deiner eigenen Parzelle hinzu\n"
                         "- `/plot remove <Spieler-Name>` - entferne einen (eingetragenen) Mitspieler von deiner eigenen Parzelle\n"
-                        "- `/plot flag <'list', 'set', 'remove', 'add', 'info'>` - Parzellen-Einstellungen (Flags) deiner eigenen Parzelle auflisten und abändern\n\n"
+                        "- `/plot flag <`list`, `set`, `remove`, `add`, `info`>` - Parzellen-Einstellungen (Flags) deiner eigenen Parzelle auflisten und abändern\n\n"
                         "🏗️ **mehr Platz für größere Projekte**\n"
                         "In Ausnahmefällen können nebeneinanderliegende Parzellen auch vom Server-Team verbunden werden. Oder brauchst du für ein großes Projekt mehr Platz? Schreibe uns, was du vorhast und zeige uns gerne die Parzelle, wenn du für dieses Projekt schon etwas gebaut hast.\n\n"
                         "_Wenn du noch Fragen oder Anliegen hast, kannst du diese nun gerne hier stellen._"

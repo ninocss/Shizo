@@ -2,6 +2,7 @@
 python
 test.py
 config/tickets.json
+config/ticket_counters.json
 channel.json
 .venv
 .vscode

@@ -47,7 +47,6 @@ async def get_ticket_users(thread: discord.Thread) -> List[discord.User]:
     
     return list(seen_users.values())
 
-
 def load_ticket_counter_data() -> dict:
     if not os.path.exists(TICKET_COUNTER_FILE):
         return {}

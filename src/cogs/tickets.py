@@ -106,7 +106,7 @@ class TicketCog(commands.Cog):
 
             parts = content.split(" ", 1)
             if len(parts) < 2 or not parts[1].strip():
-                embed = simple_embed("Bitte gib einen neuen Namen an, z.B. '?rename Neues Ticket'", color=0xffa500)
+                embed = simple_embed("Bitte gib einen neuen Namen an, z.B. `?rename Neues Ticket`", color=0xffa500)
                 await message.channel.send(embed=embed)
                 return
 
@@ -278,7 +278,7 @@ class TicketCog(commands.Cog):
                 elif title == "Vor-Ort Treffen und Besuch":
                     meetup_desc = (
                         "Der Minecraft-Server _Canstein-Berlin_ gehört zum Bibellabor der **von Cansteinschen Bibelanstalt in Berlin e.V.**. Mehrmals im Jahr bieten wir als Verein Community-Treffen (Reallife-Treffen) in unserem Vereins-Sitz in Berlin an. Ebenso gibt es Auswärts-Termine, bei denen wir als Bibellabor an einem externen Veranstaltungs-Ort etwas anbieten und dort anzutreffen sind - ob als Besucher oder zum Mithelfen. Community-Treffen solcher Art werden allgemein im #neuigkeiten Channel hier im Discord verkündet. Fragen zu diesen Treffen können via E-Mail an communitytreffen@canstein-berlin.de oder über das Ticket hier direkt gestellt werden.\n\n"
-                        "Wir sind aber auch auf Anfrage in Berlin besuchbar und bieten an, sich bei uns das 'analoge Bibellabor' samt unserer Schreibwerkstatt in der Philipp-Melanchthon-Kirche in Berlin-Neukölln anzusehen. Hierfür kann man sich an unsere Mitarbeiter via E-Mail an <mailto:kontakt@canstein-berlin.de> oder über das Support-Ticket hier wenden.\n\n"
+                        "Wir sind aber auch auf Anfrage in Berlin besuchbar und bieten an, sich bei uns das `analoge Bibellabor` samt unserer Schreibwerkstatt in der Philipp-Melanchthon-Kirche in Berlin-Neukölln anzusehen. Hierfür kann man sich an unsere Mitarbeiter via E-Mail an <mailto:kontakt@canstein-berlin.de> oder über das Support-Ticket hier wenden.\n\n"
                         "Um welche der geplanten Veranstaltungen geht es?\n-# Wähle eine Option aus dem Drop-Down Menü aus!"
                     )
                     meetup_embed = discord.Embed(title="Vor-Ort Treffen und Besuch", description=meetup_desc, color=embed_color)
