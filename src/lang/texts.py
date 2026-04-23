@@ -1,17 +1,16 @@
 from util.constants import *
 
 TEXTS = {
-    
     "BOT_NAME": "Shizo",
     # First Ticket embed texts
-    "SUPPORT_HEADER_TEXT": "🎫 Support",
+    "SUPPORT_HEADER_TEXT": "Support",
     "EMBED_CREATED": "Embed wurde gesendet",
     "TICKET_CREATION_EMBED_TEXT": "Hast du Fragen oder möchtest etwas anmerken? Öffne jetzt ein **Support-Ticket**, um Kontakt mit unserem Team aufzunehmen. Es wird so schnell es geht jemand antworten. Du brauchst niemanden vom Team anzupingen.",
     "WHAT_NEXT": "Was als nächstes?",
     "WHAT_NEXT_VALUE": 'Wähle eine **Kategorie** aus dem **Drop-Down Menü** aus, um weitere Informationen zu erhalten und um dein **Ticket anzupassen**.',
     
     # Error Messages
-    "ERROR": "❌ Fehler",
+    "ERROR": f"{UNCHECK} Fehler",
     "NO_PERMISSION_TITLE": "Keine Berechtigung",
     "NO_PERMISSION": "Du hast keine Berechtigung für diesen Befehl.",
     "CAN_ONLY_BE_USED_IN_THREAD": "Dieser Befehl kann nur in einem Ticket-Thread verwendet werden.",
@@ -19,8 +18,8 @@ TEXTS = {
     "MEMBER_NOT_FOUND": "Fehler: Der Member konnte nicht gefunden werden.",
     
     # Close Embed
-    "CLOSE_EMBED_DESC": f'Schließe das Ticket mit {LOCK_EMOJI} und bestätige mit **"Ja"**, oder brich mit **"Nein"** ab.\n Um das Ticket mit einem **Grund** zuschließen, drücke auf {LOCK_W_REASON_EMOJI} und gib deinen Grund an.',
-    "TICKET_OVERVIEW_TITLE": "🎫 Ticket Übersicht",
+    "CLOSE_EMBED_DESC": 'Um das Ticket zuschließen, drücke auf 🔒 und bestätige mit **"Ja"**, oder brich mit **"Nein"** ab.\n Du kannst das Ticket auch mit einem Grund schließen, indem du auf 🔏 klickst!',
+    "TICKET_OVERVIEW_TITLE": "Ticket Übersicht",
     
     # Embed Footer
     "EMBED_FOOTER": "Ticket System | by nino161er",
