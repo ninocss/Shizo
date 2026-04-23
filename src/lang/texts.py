@@ -5,36 +5,36 @@ TEXTS = {
     # First Ticket embed texts
     "SUPPORT_HEADER_TEXT": "Support",
     "EMBED_CREATED": "Embed wurde gesendet",
-    "TICKET_CREATION_EMBED_TEXT": "Hast du Fragen oder möchtest etwas anmerken? Öffne jetzt ein **Support-Ticket**, um Kontakt mit unserem Team aufzunehmen. Es wird so schnell es geht jemand antworten. Du brauchst niemanden vom Team anzupingen.",
-    "WHAT_NEXT": "Was als nächstes?",
-    "WHAT_NEXT_VALUE": 'Wähle eine **Kategorie** aus dem **Drop-Down Menü** aus, um weitere Informationen zu erhalten und um dein **Ticket anzupassen**.',
+    "TICKET_CREATION_EMBED_TEXT": "Hast du Fragen oder möchtest etwas anmerken? Öffne jetzt ein **Support-Ticket**, um Kontakt mit unserem Team aufzunehmen. Jemand wird so schnell wie möglich antworten. Du musst niemanden aus dem Team anpingen.",
+    "WHAT_NEXT": "Was als Nächstes?",
+    "WHAT_NEXT_VALUE": 'Wähle eine **Kategorie** aus dem **Dropdown-Menü**, um weitere Informationen zu erhalten und dein **Ticket anzupassen**.',
     
     # Error Messages
     "ERROR": f"{UNCHECK} Fehler",
     "NO_PERMISSION_TITLE": "Keine Berechtigung",
     "NO_PERMISSION": "Du hast keine Berechtigung für diesen Befehl.",
     "CAN_ONLY_BE_USED_IN_THREAD": "Dieser Befehl kann nur in einem Ticket-Thread verwendet werden.",
-    "NO_MEMBER": "Fehler: Der Member existiert nicht.",
-    "MEMBER_NOT_FOUND": "Fehler: Der Member konnte nicht gefunden werden.",
+    "NO_MEMBER": "Fehler: Das Mitglied wurde nicht gefunden.",
+    "MEMBER_NOT_FOUND": "Fehler: Das Mitglied konnte nicht gefunden werden.",
     
     # Close Embed
-    "CLOSE_EMBED_DESC": 'Um das Ticket zuschließen, drücke auf 🔒 und bestätige mit **"Ja"**, oder brich mit **"Nein"** ab.\n Du kannst das Ticket auch mit einem Grund schließen, indem du auf 🔏 klickst!',
-    "TICKET_OVERVIEW_TITLE": "Ticket Übersicht",
+    "CLOSE_EMBED_DESC": 'Um das Ticket zu schließen, drücke auf 🔒 und bestätige mit **"Ja"** oder brich mit **"Nein"** ab. Du kannst das Ticket auch mit einem Grund schließen, indem du auf 🔏 klickst!',
+    "TICKET_OVERVIEW_TITLE": "Ticket-Übersicht",
     
     # Embed Footer
-    "EMBED_FOOTER": "Ticket System | by nino161er",
+    "EMBED_FOOTER": "Ticket-System | by nino161er",
     
     # Ticket Messages
     "TICKET_CREATION_SUCCESS": "Ticket erstellt in {thread}!",
     "TICKET_CREATION_ERROR": "Fehler beim Erstellen des Tickets.",
     "TICKET_CLOSE_CONFIRMATION": "> {user} Bist du dir sicher, dass du das Ticket schließen möchtest?",
     "TICKET_CLOSE_WITH_REASON_CONFIRMATION": "> {user} Bist du dir sicher, dass du das Ticket mit dem Grund: ```{reason}``` schließen möchtest?",
-    "DEFAULT_HELP_MESSAGE": "Es wird dir so schnell wie möglich geholfen!",
-    "TICKET_CLOSED_TIMEOUT": "> Ticket geschlossen aus folgendem Grund: ```Time-Out nach 30 Tagen.```",
+    "DEFAULT_HELP_MESSAGE": "Dir wird so schnell wie möglich geholfen!",
+    "TICKET_CLOSED_TIMEOUT": "> Ticket geschlossen aus folgendem Grund: ```Timeout nach 30 Tagen.```",
     "TICKET_CLOSED_BY": "> Ticket geschlossen von **{user_display}** *({user_name})*",
     "TICKET_CLOSED_BY_REASON": "> Ticket geschlossen von **{user_display}** *({user_name})* aus folgendem Grund: ```{reason}```",
-    "TICKET_REOPENED": "> {user} Das Ticket wurde neu eröffnet.",
-    "SETUP_MESSAGES_DELETED": "> Alle setup Nachrichten im Ticket wurden gelöscht.",
+    "TICKET_REOPENED": "> {user} Das Ticket wurde wieder geöffnet.",
+    "SETUP_MESSAGES_DELETED": "> Alle Setup-Nachrichten im Ticket wurden gelöscht.",
     
     # Button Labels
     "CANCEL_BUTTON_LABEL": "Abbrechen",
@@ -84,16 +84,16 @@ TEXTS = {
     "AREA_SAVING_MODAL_TITLE": "Bereich Sichern",
     "AREA_SAVING_TITLE": "Bereich Sichern",
     "WORLD_LABEL": "Welt",
-    "WORLD_PLACEHOLDER": "Die Welt, e.g. Overworld, Nether, End",
+    "WORLD_PLACEHOLDER": "Die Welt, z. B. Overworld, Nether, End",
     "COORDINATES_LABEL": "Koordinaten",
     "COORDINATES_PLACEHOLDER": "120 60 120 bis 200 70 200",
     
     "PLOT_TRANSFER_MODAL_TITLE": "Parzelle übertragen",
     "PLOT_TRANSFER_TITLE": "Parzelle übertragen",
-    "INGAME_NAME_LABEL": "Ingame Name",
-    "INGAME_NAME_PLACEHOLDER": "Der Name deines Minecraft Accounts",
-    "CANSTEIN_NAME_LABEL": "Canstein Nummer",
-    "CANSTEIN_NAME_PLACEHOLDER": "Die Nummer des benutzten Canstein Accounts",
+    "INGAME_NAME_LABEL": "Ingame-Name",
+    "INGAME_NAME_PLACEHOLDER": "Der Name deines Minecraft-Accounts",
+    "CANSTEIN_NAME_LABEL": "Canstein-Nummer",
+    "CANSTEIN_NAME_PLACEHOLDER": "Die Nummer des verwendeten Canstein-Accounts",
     
     # Embed Titles and Descriptions
     "TICKET_CLOSED_EMBED_TITLE": "Ticket geschlossen - {channel_name}",
@@ -117,9 +117,9 @@ TEXTS = {
     "TITLE_SONSTIGES": "Sonstiges",
     
     "MESSAGE_GENERAL": "Wie können wir dir helfen? Was ist dein Anliegen?",
-    "MESSAGE_ENTBANNUNG": "Schreibe nun dein Entbannungs-Antrag. Wir werden ihn intern besprechen und uns bei dir hier melden.",
+    "MESSAGE_ENTBANNUNG": "Schreibe nun deinen Entbannungsantrag. Wir werden ihn intern besprechen und uns bei dir melden.",
     
-    "NO_MEMBER": "> Fehler: Member wurde nicht gefunden.",
+    "NO_MEMBER": "> Fehler: Das Mitglied wurde nicht gefunden.",
     "NO_PERMISSION": "> Du hast keine Berechtigung, diese Aktion auszuführen.",
     "SAME_VC": "> Du musst dich im selben Sprachkanal wie der Bot befinden, um diesen Befehl zu nutzen.",
 

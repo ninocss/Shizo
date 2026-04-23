@@ -22,7 +22,7 @@ async def closeTicket(self, interaction: discord.Interaction, reason: str = None
         logger.warning(f"Ticket creator ID not found for channel {interaction.channel.id}")
         embed = discord.Embed(
             title=f"{ERROR}",
-            description="Member wurde nicht gefunden.",
+            description="Das Mitglied wurde nicht gefunden.",
             color=0xff0000
         )
         await interaction.response.send_message(embed=embed, ephemeral=True)
@@ -37,7 +37,7 @@ async def closeTicket(self, interaction: discord.Interaction, reason: str = None
             logger.warning(f"Ticket creator not found in guild for ID {TICKET_CREATOR_ID}")
             embed = discord.Embed(
                 title=f"{ERROR}",
-                description="Member wurde nicht gefunden.",
+                description="Das Mitglied wurde nicht gefunden.",
                 color=0xff0000
             )
     logger.info(f"closeTicket: channel={interaction.channel} channel_id={getattr(interaction.channel,'id',None)} ticket_creator_id={TICKET_CREATOR_ID} invoked_by={interaction.user}")
@@ -133,9 +133,12 @@ async def closeTicket(self, interaction: discord.Interaction, reason: str = None
         
     if not interaction.channel.name.startswith("[CLOSED] "):
         if reason and str(reason).strip():
+            # Escape triple-backticks in the reason to avoid breaking the surrounding codeblock
+            safe_reason = reason.replace("```", "`\u200b``")
+            reason_value = f"```{safe_reason}```"
             close_embed = discord.Embed(
                 title=f"{LOCK_EMOJI} Ticket geschlossen",
-                description=f"Ticket geschlossen von {interaction.user.mention} aus folgendem Grund:\n```{reason}```",
+                description=f"Ticket geschlossen von {interaction.user.mention} aus folgendem Grund:\n{reason_value}",
                 color=0xff0000
             )
         else:
@@ -701,9 +704,9 @@ class CloseThreadView(View):
                     
                 await interaction.channel.edit(name=current_channel_name)
                 embed = discord.Embed(
-                title="✅ Setup abgeschlossen",
-                description="Alle setup Nachrichten im Ticket wurden gelöscht.",
-                color=0x00ff00
+                    title="✅ Setup abgeschlossen",
+                    description="Alle Setup-Nachrichten im Ticket wurden gelöscht.",
+                    color=0x00ff00
                 )
                 await interaction.followup.send_message(embed=embed, ephemeral=True, delete_after=20)
                 
@@ -711,9 +714,9 @@ class CloseThreadView(View):
                 await interaction.channel.add_user(TICKET_CREATOR)
                 
                 reopen_embed = discord.Embed(
-                title="🔓 Ticket neu eröffnet",
-                description=f"{TICKET_CREATOR.mention} Das Ticket wurde neu eröffnet.",
-                color=0x00ff00
+                    title="🔓 Ticket wieder geöffnet",
+                    description=f"{TICKET_CREATOR.mention} Das Ticket wurde wieder geöffnet.",
+                    color=0x00ff00
                 )
                 await interaction.channel.send(embed=reopen_embed)
         
@@ -1181,15 +1184,12 @@ class MCServerSubSelect(discord.ui.Select):
             except:
                 pass
 
-
 class MCServerSetupView(discord.ui.View):
     def __init__(self, ticketcog: "TicketCog", server_type: str):
         super().__init__(timeout=None)
         self.ticketcog = ticketcog
         self.server_type = server_type
         self.add_item(MCServerSubSelect(server_type, ticketcog))
-        
-
 
 class RenameThread():
     def __init__(self):

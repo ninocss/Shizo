@@ -3,7 +3,7 @@ from dotenv import dotenv_values
 import os
 
 #
-# Mods need the permisson to manage Threads.
+# Mods need the permission to manage Threads.
 #
 
 #---------------------------------------------------------------------------------------------#
@@ -26,6 +26,7 @@ TEAM_ROLE = _config.get('TEAM_ROLE')
 MOD = _config.get('MOD')
 TRAIL_MOD = _config.get('TRAIL_MOD')
 TICKET_CREATOR_FILE = "config/tickets.json"
+TICKET_COUNTER_FILE = "config/ticket_counters.json"
 TEAM_ROLE = _config.get('TEAM')
 
 # Emojis for the bot

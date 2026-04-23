@@ -20,7 +20,7 @@ async def trans_ticket(interaction: discord.Interaction, summary: str, bot):
     if TICKET_CREATOR_ID is None:
         error_embed = discord.Embed(
             title=f"{ERROR}",
-            description="Error, member wurde nicht gefunden.",
+            description="Fehler: Das Mitglied wurde nicht gefunden.",
             color=0xff0000
         )
         await interaction.response.send_message(embed=error_embed, ephemeral=True)

@@ -6,45 +6,14 @@ from util.constants import *
 from views.ticketviews import *
 from modals.ticketmodals import *
 from util.tickets.ticket_creator import *
-import traceback
 from lang.texts import *
 import logging
-import colorlog
+from typing import TYPE_CHECKING
 from modals.embeds import simple_embed
 
 if TYPE_CHECKING:
     from cogs.tickets import TicketCog
 
-# Setup colored logging
-handler = colorlog.StreamHandler()
-handler.setFormatter(colorlog.ColoredFormatter(
-    '%(name_log_color)s%(name)s%(reset)s: [%(levelname)s] %(message_log_color)s%(message)s',
-    datefmt='%Y-%m-%d %H:%M:%S',
-    log_colors={
-        'DEBUG': 'cyan',
-        'INFO': 'cyan',
-        'WARNING': 'yellow',
-        'ERROR': 'red',
-        'CRITICAL': 'red,bg_white',
-    },
-    secondary_log_colors={
-        'message': {
-            'DEBUG': 'white',
-            'INFO': 'white',
-            'WARNING': 'white',
-            'ERROR': 'white',
-            'CRITICAL': 'white',
-        },
-        'name': {
-            'DEBUG': 'light_black',
-            'INFO': 'light_black',
-            'WARNING': 'light_black',
-            'ERROR': 'light_black',
-            'CRITICAL': 'light_black',
-        }
-    }
-))
-logging.basicConfig(level=logging.INFO, handlers=[handler])
 logger = logging.getLogger(__name__)
 
 class TicketCog(commands.Cog):
@@ -164,7 +133,21 @@ class TicketCog(commands.Cog):
 
     async def close_thread_with_reason(self, interaction: discord.Interaction, reason: str):
         logger.info(f"Close thread with reason '{reason}' requested by {interaction.user} in thread {interaction.channel}.")
-        embed = simple_embed(TICKET_CLOSE_WITH_REASON_CONFIRMATION.format(user=interaction.user.mention, reason=reason), color=0xffaa00)
+        # Sanitize reason to avoid breaking markdown/codeblocks in the preview
+        if reason and str(reason).strip():
+            # Escape any triple-backticks inside the reason so the surrounding codeblock won't break
+            safe_reason = reason.replace("```", "`\u200b``")
+            reason_value = f"```{safe_reason}```"
+        else:
+            reason_value = "Keine Angabe"
+
+        embed = discord.Embed(
+            title="🔒 Ticket schließen",
+            description=f"{interaction.user.mention} Bist du dir sicher, dass du das Ticket mit folgendem Grund schließen möchtest?",
+            color=0xffaa00
+        )
+        embed.add_field(name="Grund (Vorschau)", value=reason_value, inline=False)
+
         await interaction.followup.send(embed=embed, view=CloseReasonConfirmView(ticketcog=self, bot=self.bot, reason=reason), ephemeral=False)
 
     async def create_ticket_thread(self, interaction: discord.Interaction, fields: dict):
@@ -176,7 +159,15 @@ class TicketCog(commands.Cog):
         try:
             title = fields.get("Title")
             logger.info(f"Creating ticket thread '{title}' for user {interaction.user} in channel {interaction.channel}.")
-            thread = await interaction.channel.create_thread(name=title + f" von {interaction.user.display_name}", type=discord.ChannelType.private_thread)
+            # Use a persistent, incrementing ticket number per guild instead of the title in the thread name
+            try:
+                ticket_num = get_next_ticket_number(interaction.guild.id)
+            except Exception:
+                # Fallback to title if counter fails
+                ticket_num = None
+
+            thread_name = f"ticket-{ticket_num} ({interaction.user.display_name})" if ticket_num is not None else title + f" von {interaction.user.display_name}"
+            thread = await interaction.channel.create_thread(name=thread_name, type=discord.ChannelType.private_thread)
 
             save_ticket_creator(thread.id, interaction.user.id)
             TICKET_CREATOR = interaction.user
@@ -247,7 +238,7 @@ class TicketCog(commands.Cog):
                     await thread.send(embed=setup_embed, view=MCServerSetupView(ticketcog=self, server_type="kreativ"))
                 elif title == "Survival (normal)":
                     setup_desc = (
-                        "Du hast ein Anliegen zu unserem normal Freebuild Survival-Server?\n\n"
+                        "Du hast ein Anliegen zu unserem normalen Freebuild-Survival-Server?\n\n"
                         "Worum geht es?\n"
                         "-# Wähle eine Option aus dem Drop-Down Menü aus!"
                     )
@@ -277,7 +268,7 @@ class TicketCog(commands.Cog):
                     await thread.send(embed=bug_embed)
                 elif title == "Minecraft Launcher und Mods":
                     lm_desc = (
-                        "Du hast inhaltliche Fragen zu bekannte Minecraft-Launcher, Mod-Packs oder Mods? Oder Probleme bei der Installation oder Verwendung? Dann kannst du diese gerne hier stellen.\n\n"
+                        "Du hast inhaltliche Fragen zu bekannten Minecraft-Launcher, Mod-Packs oder Mods? Oder Probleme bei der Installation oder Verwendung? Dann kannst du diese gerne hier stellen.\n\n"
                         "In unserem Minecraft Regelwerk unter https://docu.canstein-berlin.de/rules/minecraft/#3-modifikationen ist beschrieben, wann welche Art von Client-Modifikationen (Mods) auf unserem Server erlaubt oder verboten sind. Im Zweifel kannst du hier gerne entsprechend nachfragen."
                     )
                     lm_embed = discord.Embed(title="Minecraft Launcher und Mods", description=lm_desc, color=embed_color)
@@ -379,8 +370,7 @@ class TicketCog(commands.Cog):
                     await interaction.followup.send(embed=error_embed, ephemeral=True, delete_after=10)
                 except Exception:
                     logger.debug("Failed to send ticket creation error message")
-            print(f"Fehler beim Erstellen des Tickets: {e}")
-            print(traceback.format_exc())
+            logger.exception(f"Fehler beim Erstellen des Tickets: {e}")
 
     @app_commands.command(name="menu", description="Manage the current ticket thread")
     async def menu(self, interaction: discord.Interaction):

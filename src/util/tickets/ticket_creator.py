@@ -46,3 +46,35 @@ async def get_ticket_users(thread: discord.Thread) -> List[discord.User]:
             seen_users[message.author.id] = message.author
     
     return list(seen_users.values())
+
+
+def load_ticket_counter_data() -> dict:
+    if not os.path.exists(TICKET_COUNTER_FILE):
+        return {}
+    try:
+        with open(TICKET_COUNTER_FILE, "r", encoding="utf-8") as f:
+            return json.load(f)
+    except (json.JSONDecodeError, IOError, OSError):
+        return {}
+
+
+def save_ticket_counter_data(data: dict) -> None:
+    try:
+        with open(TICKET_COUNTER_FILE, "w", encoding="utf-8") as f:
+            json.dump(data, f, indent=4, ensure_ascii=False)
+    except (IOError, OSError):
+        pass
+
+
+def get_next_ticket_number(guild_id: int) -> int:
+    data = load_ticket_counter_data()
+    key = str(guild_id)
+    last = data.get(key, 0)
+    try:
+        last_int = int(last)
+    except Exception:
+        last_int = 0
+    next_num = last_int + 1
+    data[key] = next_num
+    save_ticket_counter_data(data)
+    return next_num

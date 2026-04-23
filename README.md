@@ -90,8 +90,8 @@ See requirements.txt for full dependency list.
 
 ### Prerequisites
 
-- Python $3.8$ or higher
-- FFmpeg installed and available in `$PATH$
+- Python 3.8 or higher
+- FFmpeg installed and available in PATH
 - A Discord bot application and token
 
 ### 1. Clone the Repository
@@ -233,4 +233,4 @@ Created by **nino**
 - Audio: FFmpeg
 - Transcripts: custom HTML in [`util/transcript_template.html`](src/util/transcript_template.html)
 
-If you like the bot, consider starring the repository and sharing feedback via the `/github` command.On first run, Discord may take a short time to register slash commands.
+If you like the bot, consider starring the repository and sharing feedback via the `/github` command.

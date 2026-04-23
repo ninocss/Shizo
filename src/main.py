@@ -10,7 +10,6 @@ from discord.ext import commands
 from util.constants import *
 from views.ticketviews import *
 from cogs.tickets import TicketCog
-from cogs.github import GithubCog
 from cogs.role_test import RoleTestCog
 
 # Setup colored logging
@@ -56,7 +55,6 @@ class Bot(commands.Bot):
         # Add cogs
         cogs = [
             TicketCog(self),
-            GithubCog(self),
             RoleTestCog(self),
         ]
 
@@ -79,11 +77,11 @@ class Bot(commands.Bot):
         guild_id = discord.Object(id=SYNC_SERVER)
         synced = await self.tree.sync(guild=guild_id)
         cmd_names = [cmd.name for cmd in synced]
-        logger.debug(f"---> Commands synced: {', '.join(cmd_names)}.")
+        logger.info(f"💉 Commands synced: {', '.join(cmd_names)}.")
         
     async def on_ready(self):
         logger.debug(f"---> Online as {self.user}")
-        logger.info(f">>>>>>>>>>>>>>>>>>>>>>>>>>>>> Ready! <<<<<<<<<<<<<<<<<<<<<<<<<<<<<<")
+        logger.info(f"Ready! 🚀")
 
 async def main():
     bot = Bot()

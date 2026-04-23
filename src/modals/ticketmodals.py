@@ -9,7 +9,7 @@ from lang.texts import *
 if TYPE_CHECKING:
     from cogs.tickets import TicketCog
 
-# Rename the ticket, before it gets archived
+# Rename the ticket before it gets archived
 class ThreadModalRename(Modal):
     def __init__(self):
         super().__init__(title=ARCHIVE_TICKET_MODAL_TITLE)
@@ -70,7 +70,7 @@ class RenameThreadModal(Modal):
             except Exception:
                 pass
 
-# Get a summary of the ticket after transcripting it
+# Get a summary of the ticket after transcribing it
 class TransDesc(Modal):
     def __init__(self, bot):
         super().__init__(title=TICKET_DESCRIPTION_MODAL_TITLE)
@@ -109,64 +109,3 @@ class closeThreadReasonModal(Modal):
         await interaction.response.defer()
         reason = self.reason_TextInput.value
         await self.ticketcog.close_thread_with_reason(interaction=interaction, reason=reason)
-
-# Area saving modal, to get the world and coordinates
-class bereichModal(Modal):
-    def __init__(self, ticketcog: "TicketCog"):
-        super().__init__(title=AREA_SAVING_MODAL_TITLE)
-        self.ticketcog = ticketcog
-        self.welt = discord.ui.TextInput(
-            label=WORLD_LABEL,
-            placeholder=WORLD_PLACEHOLDER,
-            style=discord.TextStyle.short,
-            max_length=60
-        )
-        self.koordinaten = discord.ui.TextInput(
-            label=COORDINATES_LABEL,
-            placeholder=COORDINATES_PLACEHOLDER
-        )
-
-        self.add_item(self.welt)
-        self.add_item(self.koordinaten)
-        
-    async def on_submit(self, interaction: discord.Interaction):
-        fields = {
-            "Title": AREA_SAVING_TITLE,
-            "Koordinaten": self.koordinaten.value,
-            "Welt": self.welt.value,
-            "message": DEFAULT_HELP_MESSAGE
-        }
-        print(f"ticketcog type: {type(self.ticketcog)}")
-        print(f"Has create_ticket_thread: {hasattr(self.ticketcog, 'create_ticket_thread')}")
-        await self.ticketcog.create_ticket_thread(interaction=interaction, fields=fields)
-
-# Get the coordinates of the plot
-class parzelleModal(Modal):
-    def __init__(self, ticketcog: "TicketCog"):
-        super().__init__(title=PLOT_TRANSFER_MODAL_TITLE)
-        self.ticketcog = ticketcog
-        
-        self.ingame_name = discord.ui.TextInput(
-            label=INGAME_NAME_LABEL,
-            placeholder=INGAME_NAME_PLACEHOLDER,
-            style=discord.TextStyle.short,
-            max_length=60
-        )
-        self.canstein_name = discord.ui.TextInput(
-            label=CANSTEIN_NAME_LABEL,
-            placeholder=CANSTEIN_NAME_PLACEHOLDER,
-            style=discord.TextStyle.short,
-            max_length=60,
-            required=False
-        )
-        self.add_item(self.ingame_name)
-        self.add_item(self.canstein_name)
-
-    async def on_submit(self, interaction: discord.Interaction):
-        fields = {
-            "Title": PLOT_TRANSFER_TITLE,
-            "Ingame Name": self.ingame_name.value,
-            "Canstein Name": self.canstein_name.value,
-            "message": DEFAULT_HELP_MESSAGE
-        }
-        await self.ticketcog.create_ticket_thread(interaction=interaction, fields=fields)
