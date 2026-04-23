@@ -241,7 +241,7 @@ class TicketCog(commands.Cog):
                     setup_desc = (
                         "Du hast ein Anliegen zu unserem Kreativ-Server?\n\n"
                         "Worum geht es?\n"
-                        "- Wähle eine Option aus dem Drop-Down Menü aus!"
+                        "-# Wähle eine Option aus dem Drop-Down Menü aus!"
                     )
                     setup_embed = discord.Embed(title="MC Server: Kreativ-Server", description=setup_desc, color=embed_color)
                     await thread.send(embed=setup_embed, view=MCServerSetupView(ticketcog=self, server_type="kreativ"))
@@ -249,7 +249,7 @@ class TicketCog(commands.Cog):
                     setup_desc = (
                         "Du hast ein Anliegen zu unserem normal Freebuild Survival-Server?\n\n"
                         "Worum geht es?\n"
-                        "- Wähle eine Option aus dem Drop-Down Menü aus!"
+                        "-# Wähle eine Option aus dem Drop-Down Menü aus!"
                     )
                     setup_embed = discord.Embed(title="MC Server: Survival (normal)", description=setup_desc, color=embed_color)
                     await thread.send(embed=setup_embed, view=MCServerSetupView(ticketcog=self, server_type="survival"))
@@ -257,14 +257,14 @@ class TicketCog(commands.Cog):
                     setup_desc = (
                         "Du hast ein Anliegen zu unserem Skyblock-Bereich auf dem Survival-Server?\n\n"
                         "Worum geht es?\n"
-                        "- Wähle eine Option aus dem Drop-Down Menü aus!"
+                        "-# Wähle eine Option aus dem Drop-Down Menü aus!"
                     )
                     setup_embed = discord.Embed(title="MC Server: Survival (Skyblock)", description=setup_desc, color=embed_color)
                     await thread.send(embed=setup_embed, view=MCServerSetupView(ticketcog=self, server_type="skyblock"))
                 elif title == "Events":
                     setup_desc = (
                         "Auf unserem Minecraft-Server finden regelmäßig verschiedene Events statt. Große Minecraft-Gottesdienste gibt es zum Beispiel zu Ostern, Pfingsten, im Sommer oder zu Weihnachten. Diese werden dann auf unserer Webseite und hier im Discord in #neuigkeiten angekündigt.\n\n"
-                        "Um welche Events geht es?\n- Wähle eine Option aus dem Drop-Down Menü aus!"
+                        "Um welche Events geht es?\n-# Wähle eine Option aus dem Drop-Down Menü aus!"
                     )
                     setup_embed = discord.Embed(title="MC Server: Events", description=setup_desc, color=embed_color)
                     await thread.send(embed=setup_embed, view=MCServerSetupView(ticketcog=self, server_type="events"))
@@ -287,8 +287,8 @@ class TicketCog(commands.Cog):
                 elif title == "Vor-Ort Treffen und Besuch":
                     meetup_desc = (
                         "Der Minecraft-Server _Canstein-Berlin_ gehört zum Bibellabor der **von Cansteinschen Bibelanstalt in Berlin e.V.**. Mehrmals im Jahr bieten wir als Verein Community-Treffen (Reallife-Treffen) in unserem Vereins-Sitz in Berlin an. Ebenso gibt es Auswärts-Termine, bei denen wir als Bibellabor an einem externen Veranstaltungs-Ort etwas anbieten und dort anzutreffen sind - ob als Besucher oder zum Mithelfen. Community-Treffen solcher Art werden allgemein im #neuigkeiten Channel hier im Discord verkündet. Fragen zu diesen Treffen können via E-Mail an communitytreffen@canstein-berlin.de oder über das Ticket hier direkt gestellt werden.\n\n"
-                        "Wir sind aber auch auf Anfrage in Berlin besuchbar und bieten an, sich bei uns das 'analoge Bibellabor' samt unserer Schreibwerkstatt in der Philipp-Melanchthon-Kirche in Berlin-Neukölln anzusehen. Hierfür kann man sich an unsere Mitarbeiter via E-Mail an kontakt@canstein-berlin.de oder über das Support-Ticket hier wenden.\n\n"
-                        "Um welche der geplanten Veranstaltungen geht es?\n- Wähle eine Option aus dem Drop-Down Menü aus!"
+                        "Wir sind aber auch auf Anfrage in Berlin besuchbar und bieten an, sich bei uns das 'analoge Bibellabor' samt unserer Schreibwerkstatt in der Philipp-Melanchthon-Kirche in Berlin-Neukölln anzusehen. Hierfür kann man sich an unsere Mitarbeiter via E-Mail an <mailto:kontakt@canstein-berlin.de> oder über das Support-Ticket hier wenden.\n\n"
+                        "Um welche der geplanten Veranstaltungen geht es?\n-# Wähle eine Option aus dem Drop-Down Menü aus!"
                     )
                     meetup_embed = discord.Embed(title="Vor-Ort Treffen und Besuch", description=meetup_desc, color=embed_color)
                     meetup_embed.set_footer(text=EMBED_FOOTER)
@@ -318,7 +318,7 @@ class TicketCog(commands.Cog):
                     coop_desc = (
                         "Der Minecraft-Server _Canstein-Berlin_ gehört zum Bibellabor der **von Cansteinschen Bibelanstalt in Berlin e.V.**. Wir als Verein bieten externen Organisationen (Kirchengemeinde, Arbeitsgemeinschaft, Schulklasse, Konfi-Gruppe, Verein, …) Kooperation verschiedener Art an, um biblische / pädagogische / didaktische Minecraft-Projekte gemeinsam durchzuführen. Wir bieten beispielsweise Workshops und Platz für Bau-Events an, oder stellen bei langfristigen Kooperationen auch Platz und Rechte auf unserem Minecraft Kooperations-Server zur Verfügung.\n\n"
                         "Alle Infos rund um unsere Kooperations-Angebote finden Sie in unserer Doku: https://docu.canstein-berlin.de/supplies.\n\n"
-                        "Bei Fragen können Sie sich gerne per E-Mail an kontakt@canstein-berlin.de oder hier im Support-Ticket an uns wenden."
+                        "Bei Fragen können Sie sich gerne per E-Mail an <mailto:kontakt@canstein-berlin.de> oder hier im Support-Ticket an uns wenden."
                     )
                     coop_embed = discord.Embed(title="Kooperationen", description=coop_desc, color=embed_color)
                     coop_embed.set_footer(text=EMBED_FOOTER)
@@ -328,7 +328,7 @@ class TicketCog(commands.Cog):
                     apply_desc = (
                         "Du möchtest dich bei uns auf dem Minecraft-Server **als Bauhilfe** oder **im Team** mit einbringen? Oder möchtest du eine feste Aufgabe bei Vor-Ort Projekte in Berlin übernehmen? Wir freuen uns über dein Engagement!\n\n"
                         "Du kannst hier **allgemeine Fragen** zum entsprechenden Rang oder zum **Bewerbungs-Verfahren** stellen. Für die Bewerbung selber ist aber unser Online-Formular zu verwenden: https://canstein-berlin.de/minecraft-bewerbung. Wenn deine gewünschte Rolle dort namentlich nicht aufgeführt wird, kannst du dich gerne hier bei uns melden.\n\n"
-                        "Um welchen Rang geht es?\n- Wähle eine Option aus dem Drop-Down Menü aus!"
+                        "Um welchen Rang geht es?\n-# Wähle eine Option aus dem Drop-Down Menü aus!"
                     )
                     apply_embed = discord.Embed(title="Bewerbung", description=apply_desc, color=embed_color)
                     apply_embed.set_footer(text=EMBED_FOOTER)

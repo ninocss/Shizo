@@ -62,10 +62,10 @@ TEXTS = {
     "OTHER": "Sonstiges",
     
     # Ticket Category Messages
-    "GENERAL_DISCORD_HELP": "Wie können wir dir helfen? Was ist dein Anliegen?",
-    "GENERAL_MINECRAFT_HELP": "Wie können wir dir helfen? Was ist dein Anliegen?",
-    "UNBAN_REQUEST_MESSAGE": "Schreibe nun dein Entbannungs-Antrag. Wir werden ihn intern besprechen und uns bei dir hier melden.",
-    "OTHER_HELP": "Wie können wir dir helfen? Was ist dein Anliegen?",
+    "GENERAL_DISCORD_HELP": "Bitte schildere dein Problem oder deine Frage. Wie können wir dir helfen? Was ist dein Anliegen?",
+    "GENERAL_MINECRAFT_HELP": "Bitte schildere dein Problem oder deine Frage. Wie können wir dir helfen? Was ist dein Anliegen?",
+    "UNBAN_REQUEST_MESSAGE": "Bitte schildere dein Problem oder deine Frage. Wie können wir dir helfen? Was ist dein Anliegen?",
+    "OTHER_HELP": "Bitte schildere dein Problem oder deine Frage. Wie können wir dir helfen? Was ist dein Anliegen?",
     
     # Modal Titles and Labels
     "ARCHIVE_TICKET_MODAL_TITLE": "Archiviere das Ticket",

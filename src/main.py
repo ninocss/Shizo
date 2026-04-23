@@ -48,7 +48,7 @@ class Bot(commands.Bot):
         super().__init__(
             command_prefix="!",
             intents=intents,
-            activity=discord.Activity(name="with ❤️ and nino161er", type=discord.ActivityType.playing),
+            activity=discord.Activity(name="made with ❤️ and nino161er", type=discord.ActivityType.playing),
             *args, **kwargs
         )
 

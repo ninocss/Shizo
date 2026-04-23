@@ -15,7 +15,7 @@ if TYPE_CHECKING:
     from cogs.music import MusicCog
 import re
 
-async def closeTicket(self, interaction: discord.Interaction):
+async def closeTicket(self, interaction: discord.Interaction, reason: str = None):
     guild = interaction.guild
     TICKET_CREATOR_ID = get_ticket_creator(interaction.channel.id) 
     if TICKET_CREATOR_ID is None:
@@ -41,6 +41,8 @@ async def closeTicket(self, interaction: discord.Interaction):
                 color=0xff0000
             )
     logger.info(f"closeTicket: channel={interaction.channel} channel_id={getattr(interaction.channel,'id',None)} ticket_creator_id={TICKET_CREATOR_ID} invoked_by={interaction.user}")
+    # prepare reason text for embeds/DMs
+    reason_text = reason if reason and str(reason).strip() else "Keine Angabe"
     # Explicitly remove the original ticket creator unless they are in the support/admin team
     try:
         if TICKET_CREATOR is not None:
@@ -71,7 +73,7 @@ async def closeTicket(self, interaction: discord.Interaction):
                         if SEND_TICKET_FEEDBACK:
                             dm_embed = discord.Embed(
                                 title=f"{LOCK_EMOJI} Ticket geschlossen - {interaction.channel.name}",
-                                description=f"**Geschlossen von:** {interaction.user.mention}\n**Grund:** Keine Angabe\n**Server:** {interaction.guild.name}",
+                                description=f"**Geschlossen von:** {interaction.user.mention}\n**Grund:** {reason_text}\n**Server:** {interaction.guild.name}",
                                 color=0xff0000
                             )
                             dm_embed.set_thumbnail(url=interaction.guild.icon)
@@ -114,7 +116,7 @@ async def closeTicket(self, interaction: discord.Interaction):
             if SEND_TICKET_FEEDBACK is True:
                 embed = discord.Embed(
                     title=f"{LOCK_EMOJI} Ticket geschlossen - {interaction.channel.name}",
-                    description=f"**Geschlossen von:** {interaction.user.mention}\n**Grund:** Keine Angabe\n**Server:** {interaction.guild.name}",
+                    description=f"**Geschlossen von:** {interaction.user.mention}\n**Grund:** {reason_text}\n**Server:** {interaction.guild.name}",
                     color=0xff0000
                 )
                 embed.set_thumbnail(url=interaction.guild.icon)
@@ -130,11 +132,18 @@ async def closeTicket(self, interaction: discord.Interaction):
             logger.debug(f"User {guild_member} has required role, not removing from ticket channel")
         
     if not interaction.channel.name.startswith("[CLOSED] "):
-        close_embed = discord.Embed(
-            title=f"{LOCK_EMOJI} Ticket geschlossen",
-            description=f"Ticket geschlossen von {interaction.user.mention}.",
-            color=0xff0000
-        )
+        if reason and str(reason).strip():
+            close_embed = discord.Embed(
+                title=f"{LOCK_EMOJI} Ticket geschlossen",
+                description=f"Ticket geschlossen von {interaction.user.mention} aus folgendem Grund:\n```{reason}```",
+                color=0xff0000
+            )
+        else:
+            close_embed = discord.Embed(
+                title=f"{LOCK_EMOJI} Ticket geschlossen",
+                description=f"Ticket geschlossen von {interaction.user.mention}.",
+                color=0xff0000
+            )
         close_embed.add_field(
             name="📊 Ticket Information",
             value=f"**Channel:** {interaction.channel.name}\n**Closed at:** <t:{int(discord.utils.utcnow().timestamp())}:F>",
@@ -542,176 +551,8 @@ class CloseReasonConfirmView(View):
         await interaction.message.delete()
         global DELETE_USER
         DELETE_USER = interaction.user
-        reason = self.reason
-        
-        guild = interaction.guild
-        TICKET_CREATOR_ID = get_ticket_creator(interaction.channel.id) 
-        
-        if TICKET_CREATOR_ID is None:
-            logger.warning(f"Ticket creator ID not found for channel {interaction.channel.id}")
-            pass
-
-        TICKET_CREATOR = guild.get_member(TICKET_CREATOR_ID)
-        if TICKET_CREATOR is None:
-            try:
-                TICKET_CREATOR = await guild.fetch_member(TICKET_CREATOR_ID)
-            except Exception:
-                logger.warning(f"Ticket creator not found in guild for ID {TICKET_CREATOR_ID}")
-                pass
-        
-        embed = discord.Embed(
-            title=f"{LOCK_EMOJI} Ticket geschlossen - {interaction.channel.name}",
-            description=f"**Geschlossen von:** {interaction.user.mention}\n**Grund:** {reason}\n**Server:** {interaction.guild.name}",
-            color=0xff0000
-        )
-        embed.set_thumbnail(url=interaction.guild.icon)
-        embed.set_author(name=interaction.user.name, icon_url=interaction.user.avatar.url if interaction.user.avatar else None)
-        embed.set_footer(text=EMBED_FOOTER)
-        embed.timestamp = discord.utils.utcnow()
-        
-        # Explicitly remove the original ticket creator unless they are in the support/admin team
-        try:
-            if TICKET_CREATOR is not None:
-                creator_is_support = (
-                    TICKET_CREATOR.guild_permissions.administrator or
-                    any(role.name in [TEAM_ROLE, MOD, TRAIL_MOD] for role in TICKET_CREATOR.roles)
-                )
-
-                if not creator_is_support:
-                    try:
-                        if isinstance(interaction.channel, discord.Thread) and TICKET_CREATOR in interaction.channel.members:
-                            logger.info(f"Removing ticket creator {TICKET_CREATOR} from ticket channel {interaction.channel}")
-                            await interaction.channel.remove_user(TICKET_CREATOR)
-                            await asyncio.sleep(0.5)
-
-                            if SEND_TICKET_FEEDBACK:
-                                try:
-                                    await TICKET_CREATOR.send(embed=embed)
-                                except Exception:
-                                    logger.debug(f"Could not DM ticket creator {TICKET_CREATOR}")
-                    except Exception as e:
-                        logger.error(f"Error removing ticket creator: {e}")
-
-        except Exception:
-            logger.exception("Unexpected error while handling ticket creator removal")
-
-        # Remove any non-support members from the thread (skip the creator if already removed)
-        for member in list(interaction.channel.members):
-            guild_member = guild.get_member(member.id)
-            if guild_member is None:
-                continue
-
-            if TICKET_CREATOR is not None and guild_member.id == TICKET_CREATOR.id:
-                continue
-
-            logger.info(f"trying to remove users: {guild_member}")
-            has_required_role = any(role.name in [TEAM_ROLE, MOD, TRAIL_MOD] for role in guild_member.roles)
-
-            if not has_required_role:
-                logger.info(f"Removing user {guild_member} from ticket channel {interaction.channel}")
-                try:
-                    await interaction.channel.remove_user(guild_member)
-                    await asyncio.sleep(0.5)
-                except Exception as e:
-                    logger.debug(f"Could not remove user {guild_member}: {e}")
-
-                if SEND_TICKET_FEEDBACK is True:
-                    logger.info(f"Sending closed ticket embed to {guild_member}")
-                    try:
-                        await guild_member.send(embed=embed)
-                    except Exception:
-                        logger.debug(f"Could not DM user {guild_member}")
-            else:
-                logger.debug(f"User {guild_member} has required role, not removing from ticket channel")
-            
-        if not interaction.channel.name.startswith("[CLOSED] "):
-            close_embed = discord.Embed(
-                title="🔒 Ticket geschlossen",
-                description=f"Ticket geschlossen von {interaction.user.mention} aus folgendem Grund:\n```{reason}```",
-                color=0xff0000
-            )
-            close_embed.add_field(
-                name="📊 Ticket Information",
-                value=f"**Channel:** {interaction.channel.name}\n**Closed at:** <t:{int(discord.utils.utcnow().timestamp())}:F>\n**Channel ID:** {interaction.channel.id}",
-                inline=False
-            )
-            close_embed.add_field(
-                name="👤 Closed by",
-                value=f"{interaction.user.mention}",
-                inline=True
-            )
-            if TICKET_CREATOR:
-                close_embed.add_field(
-                    name="🎫 Original Creator",
-                    value=f"{TICKET_CREATOR.mention}",
-                    inline=True
-                )
-            
-            message_count = 0
-            member_count = len(interaction.channel.members)
-            try:
-                async for _ in interaction.channel.history(limit=None):
-                    message_count += 1
-            except:
-                message_count = "Unknown"
-            
-            close_embed.add_field(
-                name="📈 Channel Statistics",
-                value=f"**Messages:** {message_count}\n**Members:** {member_count}\n**Created:** <t:{int(interaction.channel.created_at.timestamp())}:R>",
-                inline=True
-            )
-            
-            support_members = []
-            message_authors = set()
-            try:
-                async for message in interaction.channel.history(limit=None):
-                    if message.author.id != self.bot.user.id:
-                        message_authors.add(message.author.id)
-            except:
-                pass
-            
-            for member in interaction.channel.members:
-                guild_member = guild.get_member(member.id)
-                if (guild_member and 
-                    any(role.name in [TEAM_ROLE, MOD, TRAIL_MOD] for role in guild_member.roles) and
-                    guild_member.id in message_authors):
-                    support_members.append(guild_member)
-            
-            support_members = []
-            for member in interaction.channel.members:
-                guild_member = interaction.guild.get_member(member.id)
-                if guild_member and any(role.name in [TEAM_ROLE, MOD, TRAIL_MOD] for role in guild_member.roles):
-                    support_members.append(guild_member)
-                    
-            if support_members:
-                support_list = ", ".join([member.mention for member in support_members[:3]])
-                if len(support_members) > 3:
-                    support_list += f" +{len(support_members) - 3} more"
-                close_embed.add_field(
-                    name="🛠️ Support Team",
-                    value=support_list,
-                    inline=False
-                )
-                
-            try:
-                logger.info(f"Renaming channel {interaction.channel} to closed")
-                await interaction.channel.edit(name=f"[CLOSED] {interaction.channel.name}")
-                await asyncio.sleep(0.5)
-
-                close_embed.set_thumbnail(url=interaction.guild.icon.url if interaction.guild.icon else None)
-                close_embed.set_footer(text=f"{EMBED_FOOTER}", icon_url=interaction.user.display_avatar.url)
-                close_embed.timestamp = discord.utils.utcnow()
-                
-                await interaction.channel.send(embed=close_embed, view=CloseThreadView(ticketcog=self.ticketcog, bot=self.bot))
-            except discord.HTTPException as e:
-                logger.error(f"HTTPException while closing ticket: {e}")
-                if e.status == 429:
-                    await asyncio.sleep(e.retry_after if hasattr(e, 'retry_after') else 1)
-                    await interaction.channel.edit(name=f"[CLOSED] {interaction.channel.name}")
-                    await asyncio.sleep(0.5)
-                    await interaction.channel.send(embed=close_embed, view=CloseThreadView(ticketcog=self.ticketcog, bot=self.bot))
-                else:
-                    await interaction.channel.send(embed=close_embed, view=CloseThreadView(ticketcog=self.ticketcog, bot=self.bot))
+        # Delegate to shared close handler, passing the reason
+        await closeTicket(self, interaction=interaction, reason=self.reason)
 
     async def no_button(self, interaction: discord.Interaction):
         logger.info(f"{interaction.user} cancelled closing ticket with reason in {interaction.channel}")
